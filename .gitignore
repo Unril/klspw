@@ -11,12 +11,13 @@ vcpkg_installed/
 *.swp
 *.swo
 *~
+work/
+AGENTS.md
 
 # macOS
 .DS_Store
 
 # Secrets
-resources/
 .env
 .env.*
 !.env.example

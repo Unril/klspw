@@ -8,6 +8,7 @@ include(GNUInstallDirs)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(reproc++ CONFIG REQUIRED)
 
 add_library(klspw_lib INTERFACE)
 target_include_directories(klspw_lib
@@ -27,6 +28,7 @@ target_link_libraries(klspw_lib
     CLI11::CLI11
     yaml-cpp::yaml-cpp
     nlohmann_json::nlohmann_json
+    reproc++
 )
 
 add_executable(klspw
