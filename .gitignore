@@ -1,0 +1,24 @@
+# Build
+build/
+.cache/
+compile_commands.json
+
+# vcpkg
+vcpkg_installed/
+
+# IDE / editor
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Secrets
+resources/
+.env
+.env.*
+!.env.example
+*.pem
+*.key

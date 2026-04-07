@@ -1,0 +1,11 @@
+{
+    "cmake.cmakePath": "cmake",
+    "cmake.generator": "ninja",
+    "clangd.path": "/opt/homebrew/opt/llvm/bin/clangd",
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy",
+        "--header-insertion=iwyu",
+        "--completion-style=detailed"
+    ]
+}
