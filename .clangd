@@ -1,0 +1,31 @@
+CompileFlags:
+  Add: [-std=c++23]
+  CompilationDatabase: build/dev
+
+Diagnostics:
+  ClangTidy:
+    Add:
+      - bugprone-*
+      - modernize-*
+      - performance-*
+      - readability-*
+      - misc-definitions-in-headers
+      - misc-include-cleaner
+    Remove:
+      - modernize-use-trailing-return-type
+      - readability-identifier-length
+      - readability-magic-numbers
+      - performance-enum-size
+      - bugprone-easily-swappable-parameters
+      - bugprone-exception-escape
+      - readability-convert-member-functions-to-static
+      - readability-make-member-function-const
+    FastCheckFilter: Strict
+    CheckOptions:
+      readability-identifier-naming.VariableCase: lower_case
+
+Completion:
+  HeaderInsertion: IWYU
+
+Style:
+  QuotedHeaders: ".*"
