@@ -1,28 +1,56 @@
 CompileFlags:
-  Add: [ -std=c++23 ]
+  Add: [ -std=c++23, -Wno-missing-field-initializers ]
   CompilationDatabase: build/dev
 
 Diagnostics:
   ClangTidy:
     Add:
       - bugprone-*
+      - cert-*
+      - concurrency-*
+      - cppcoreguidelines-*
+      - misc-*
       - modernize-*
       - performance-*
+      - portability-*
       - readability-*
-      - misc-definitions-in-headers
-      - misc-include-cleaner
     Remove:
       - modernize-use-trailing-return-type
       - readability-identifier-length
       - readability-magic-numbers
       - performance-enum-size
       - modernize-use-nodiscard
-    FastCheckFilter: Strict
+      # cppcoreguidelines noise -- overlaps with bugprone or too strict for header-only
+      - cppcoreguidelines-avoid-magic-numbers # alias of readability-magic-numbers
+      - cppcoreguidelines-non-private-member-variables-in-classes # we use public structs for DTOs
+      - cppcoreguidelines-pro-bounds-array-to-pointer-decay # triggers on doctest macros
+      - cppcoreguidelines-owning-memory # triggers on test framework macros
+      - cppcoreguidelines-avoid-do-while # style preference, not a bug
+      - cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+      # misc noise
+      - misc-non-private-member-variables-in-classes # alias of cppcoreguidelines variant
+      - misc-no-recursion # we don't have recursion issues
+      - misc-use-anonymous-namespace # conflicts with header-only style
+      - misc-unused-alias-decls
+    FastCheckFilter: None
     CheckOptions:
       readability-identifier-naming.VariableCase: lower_case
 
 Completion:
+  AllScopes: true
   HeaderInsertion: IWYU
+
+InlayHints:
+  BlockEnd: true
+  Designators: true
+  DefaultArguments: true
+  TypeNameLimit: 40
+
+Hover:
+  ShowAKA: true
+
+Documentation:
+  CommentFormat: Doxygen
 
 Style:
   QuotedHeaders: ".*"

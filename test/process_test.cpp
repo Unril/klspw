@@ -24,7 +24,7 @@ TEST_CASE("error message includes exit code and command") {
         ProcessRunner({"sh", "-c", "exit 7"}).run();
         FAIL("Expected exception");
     } catch (const std::runtime_error& e) {
-        string msg = e.what();
+        const string msg = e.what();
         CHECK(msg.contains("7"));
         CHECK(msg.contains("sh"));
     }
@@ -59,7 +59,7 @@ TEST_CASE("runs command with multiple arguments") {
 }
 
 TEST_CASE("args() returns the command") {
-    ProcessRunner runner({"echo", "test"});
+    const ProcessRunner runner({"echo", "test"});
     REQUIRE(runner.args().size() == 2);
     CHECK(runner.args()[0] == "echo");
 }

@@ -10,6 +10,16 @@ enum class RootKind : std::uint8_t {
     java_binary,
 };
 
+inline RootKind root_kind_from_string(string_view s) {
+    if (s == "kotlin_gradle") {
+        return RootKind::kotlin_gradle;
+    }
+    if (s == "java_binary") {
+        return RootKind::java_binary;
+    }
+    throw runtime_error(format("Unknown root kind: {}", s));
+}
+
 class BuildConfig {
   public:
     const strings& command() const { return command_; }
@@ -78,6 +88,12 @@ class Config {
     const vector<RootEntry>& roots() const { return roots_; }
     const Options& options() const { return options_; }
 
+    /// Format compilerArguments for kotlin-lsp KotlinSettingsData.
+    /// Returns J{"jvmTarget":"<target>"} -- JSON-in-string prefixed with 'J'.
+    string compiler_arguments_json() const {
+        return format(R"(J{{"jvmTarget":"{}"}})", jvm_target_);
+    }
+
   private:
     explicit Config(const YAML::Node& node, const fs::path& config_dir) {
         version_ = read<int>(node, "version");
@@ -86,7 +102,7 @@ class Config {
         }
 
         if (node["workspace_file"]) {
-            workspace_file_ = (config_dir / node["workspace_file"].as<string>()).lexically_normal();
+            workspace_file_ = (config_dir / read<string>(node, "workspace_file")).lexically_normal();
         }
 
         jvm_target_ = read_or<string>(node, "jvm_target", "21");
@@ -109,21 +125,9 @@ class Config {
     }
 
     static RootEntry parse_root_entry(const YAML::Node& node, const fs::path& config_dir) {
-        const auto kind_str = read<string>(node, "kind");
-        const auto path_str = read<string>(node, "path");
-
-        RootKind kind;
-        if (kind_str == "kotlin_gradle") {
-            kind = RootKind::kotlin_gradle;
-        } else if (kind_str == "java_binary") {
-            kind = RootKind::java_binary;
-        } else {
-            throw runtime_error(format("Unknown root kind: {}", kind_str));
-        }
-
-        auto path = (config_dir / path_str).lexically_normal();
+        const auto kind = root_kind_from_string(read<string>(node, "kind"));
+        auto path = (config_dir / read<string>(node, "path")).lexically_normal();
         auto lib_dir = fs::path{read_or<string>(node, "lib_dir", "build/lib")};
-
         return RootEntry{kind, std::move(path), std::move(lib_dir)};
     }
 
@@ -135,4 +139,4 @@ class Config {
     Options options_;
 };
 
-} // namespace klspw
+}

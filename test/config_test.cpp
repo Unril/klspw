@@ -1,3 +1,4 @@
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -11,14 +12,31 @@ namespace fs = std::filesystem;
 
 namespace {
 
-fs::path write_temp_config(const std::string& content) {
-    const auto dir = fs::temp_directory_path() / "klspw_test";
-    fs::create_directories(dir);
-    const auto path = dir / "test_config.yaml";
-    std::ofstream out(path);
-    out << content;
-    return path;
-}
+struct TempConfig {
+    fs::path path;
+
+    explicit TempConfig(const std::string& content) {
+        const auto dir = fs::temp_directory_path() / "klspw_test";
+        fs::create_directories(dir);
+        static std::atomic<int> counter{0};
+        path = dir / ("config_" + std::to_string(counter++) + ".yaml");
+        std::ofstream out(path);
+        if (!out) {
+            throw std::runtime_error("Failed to write temp config: " + path.string());
+        }
+        out << content;
+    }
+
+    ~TempConfig() {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+
+    TempConfig(const TempConfig&) = delete;
+    TempConfig& operator=(const TempConfig&) = delete;
+    TempConfig(TempConfig&&) = delete;
+    TempConfig& operator=(TempConfig&&) = delete;
+};
 
 } // namespace
 
@@ -73,17 +91,15 @@ roots:
   - kind: kotlin_gradle
     path: ./src/proj
 )";
-    const auto path = write_temp_config(yaml);
-    const auto cfg = klspw::Config::from_yaml(path);
+    const TempConfig cfg(yaml);
+    const auto config = klspw::Config::from_yaml(cfg.path);
 
-    CHECK(cfg.jvm_target() == "21");
-    CHECK(cfg.options().include_tests == false);
-    CHECK(cfg.options().attach_sources == true);
-    CHECK(cfg.options().follow_symlinks == true);
-    CHECK(cfg.build().command().empty());
-    CHECK(cfg.build().gradle_args().empty());
-
-    fs::remove_all(path.parent_path());
+    CHECK(config.jvm_target() == "21");
+    CHECK(config.options().include_tests == false);
+    CHECK(config.options().attach_sources == true);
+    CHECK(config.options().follow_symlinks == true);
+    CHECK(config.build().command().empty());
+    CHECK(config.build().gradle_args().empty());
 }
 
 TEST_CASE("applies default lib_dir for java_binary root") {
@@ -93,13 +109,11 @@ roots:
   - kind: java_binary
     path: ./src/proj
 )";
-    const auto path = write_temp_config(yaml);
-    const auto cfg = klspw::Config::from_yaml(path);
+    const TempConfig cfg(yaml);
+    const auto config = klspw::Config::from_yaml(cfg.path);
 
-    REQUIRE(cfg.roots().size() == 1);
-    CHECK(cfg.roots()[0].lib_dir() == fs::path{"build/lib"});
-
-    fs::remove_all(path.parent_path());
+    REQUIRE(config.roots().size() == 1);
+    CHECK(config.roots()[0].lib_dir() == fs::path{"build/lib"});
 }
 
 TEST_CASE("throws on unsupported config version") {
@@ -109,11 +123,9 @@ roots:
   - kind: kotlin_gradle
     path: ./src/proj
 )";
-    const auto path = write_temp_config(yaml);
-
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(path), "Unsupported config version: 99", std::runtime_error);
-
-    fs::remove_all(path.parent_path());
+    const TempConfig cfg(yaml);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(cfg.path), "Unsupported config version: 99",
+                         std::runtime_error);
 }
 
 TEST_CASE("throws on root entry missing kind") {
@@ -122,12 +134,9 @@ version: 1
 roots:
   - path: ./src/proj
 )";
-    const auto path = write_temp_config(yaml);
-
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(path), "Config missing required field: kind",
+    const TempConfig cfg(yaml);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(cfg.path), "Config missing required field: kind",
                          std::runtime_error);
-
-    fs::remove_all(path.parent_path());
 }
 
 TEST_CASE("throws on root entry missing path") {
@@ -136,12 +145,9 @@ version: 1
 roots:
   - kind: kotlin_gradle
 )";
-    const auto path = write_temp_config(yaml);
-
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(path), "Config missing required field: path",
+    const TempConfig cfg(yaml);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(cfg.path), "Config missing required field: path",
                          std::runtime_error);
-
-    fs::remove_all(path.parent_path());
 }
 
 TEST_CASE("throws on missing version") {
@@ -150,24 +156,18 @@ roots:
   - kind: kotlin_gradle
     path: ./src/proj
 )";
-    const auto path = write_temp_config(yaml);
-
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(path), "Config missing required field: version",
+    const TempConfig cfg(yaml);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(cfg.path), "Config missing required field: version",
                          std::runtime_error);
-
-    fs::remove_all(path.parent_path());
 }
 
 TEST_CASE("throws on missing roots") {
     const auto* const yaml = R"(
 version: 1
 )";
-    const auto path = write_temp_config(yaml);
-
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(path), "Config missing required field: roots",
+    const TempConfig cfg(yaml);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(cfg.path), "Config missing required field: roots",
                          std::runtime_error);
-
-    fs::remove_all(path.parent_path());
 }
 
 TEST_CASE("throws on unknown root kind") {
@@ -177,11 +177,9 @@ roots:
   - kind: unknown_kind
     path: ./src/proj
 )";
-    const auto path = write_temp_config(yaml);
-
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(path), "Unknown root kind: unknown_kind", std::runtime_error);
-
-    fs::remove_all(path.parent_path());
+    const TempConfig cfg(yaml);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(cfg.path), "Unknown root kind: unknown_kind",
+                         std::runtime_error);
 }
 
 TEST_CASE("throws on nonexistent file") {
@@ -196,12 +194,10 @@ roots:
   - kind: kotlin_gradle
     path: ./src/proj
 )";
-    const auto path = write_temp_config(yaml);
-    const auto cfg = klspw::Config::from_yaml(path);
+    const TempConfig cfg(yaml);
+    const auto config = klspw::Config::from_yaml(cfg.path);
 
-    CHECK(cfg.jvm_target() == "17");
-
-    fs::remove_all(path.parent_path());
+    CHECK(config.jvm_target() == "17");
 }
 
 TEST_CASE("reads custom lib_dir for java_binary root") {
@@ -212,11 +208,9 @@ roots:
     path: ./src/proj
     lib_dir: custom/jars
 )";
-    const auto path = write_temp_config(yaml);
-    const auto cfg = klspw::Config::from_yaml(path);
+    const TempConfig cfg(yaml);
+    const auto config = klspw::Config::from_yaml(cfg.path);
 
-    REQUIRE(cfg.roots().size() == 1);
-    CHECK(cfg.roots()[0].lib_dir() == fs::path{"custom/jars"});
-
-    fs::remove_all(path.parent_path());
+    REQUIRE(config.roots().size() == 1);
+    CHECK(config.roots()[0].lib_dir() == fs::path{"custom/jars"});
 }

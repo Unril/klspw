@@ -16,6 +16,11 @@ namespace klspw {
 /// against each kotlin_gradle root. Cleans up the script on destruction.
 class GradleRunner {
   public:
+    GradleRunner(const GradleRunner&) = delete;
+    GradleRunner& operator=(const GradleRunner&) = delete;
+    GradleRunner(GradleRunner&&) = delete;
+    GradleRunner& operator=(GradleRunner&&) = delete;
+
     /// Construct with a BuildConfig. Uses system temp dir for the init script.
     explicit GradleRunner(BuildConfig build) : GradleRunner(std::move(build), fs::temp_directory_path() / "klspw") {}
 
@@ -27,11 +32,6 @@ class GradleRunner {
         std::error_code ec;
         fs::remove(init_script_path_, ec);
     }
-
-    GradleRunner(const GradleRunner&) = delete;
-    GradleRunner& operator=(const GradleRunner&) = delete;
-    GradleRunner(GradleRunner&&) = delete;
-    GradleRunner& operator=(GradleRunner&&) = delete;
 
     /// Run Gradle against a root directory. Returns captured stdout.
     string run(const fs::path& root) const {
@@ -60,4 +60,4 @@ class GradleRunner {
     }
 };
 
-} // namespace klspw
+}

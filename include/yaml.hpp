@@ -33,4 +33,4 @@ inline strings read_all(const YAML::Node& node, const string& key) {
     return result;
 }
 
-} // namespace klspw
+}

@@ -3,15 +3,6 @@
 
 #include "workspace_model.hpp"
 
-TEST_CASE("WorkspaceData defaults") {
-    klspw::WorkspaceData ws;
-    CHECK(ws.modules.empty());
-    CHECK(ws.libraries.empty());
-    CHECK(ws.sdks.empty());
-    CHECK(ws.kotlinSettings.empty());
-    CHECK(ws.javaSettings.empty());
-}
-
 TEST_CASE("DependencyData variant holds correct types") {
     const klspw::DependencyData mod = klspw::ModuleDep{.name = "core"};
     CHECK(std::holds_alternative<klspw::ModuleDep>(mod));

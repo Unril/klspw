@@ -67,7 +67,7 @@ template <typename T> T read_or(const json& j, const string& key, const T& def) 
 template <typename T, typename Fn> vector<T> read_all(const json& j, const string& key, Fn&& transform) {
     vector<T> result;
     for (const auto& elem : read<json>(j, key)) {
-        result.emplace_back(transform(elem));
+        result.emplace_back(std::forward<Fn>(transform)(elem));
     }
     return result;
 }
@@ -80,4 +80,4 @@ template <typename T> vector<T> read_all(const json& j, const string& key) {
 /// Converts a JSON string element to fs::path. For use with read_all.
 inline constexpr auto to_path = [](const json& e) { return fs::path{e.get<string>()}; };
 
-} // namespace klspw
+}

@@ -25,7 +25,7 @@ void assert_round_trip(const char* path) {
     const auto reparsed = reserialized.get<klspw::WorkspaceData>();
     const json round2 = reparsed;
 
-    // Structural equality: reserialized == round2 (idempotent).
+    // Reserialized output must be idempotent.
     CHECK(reserialized == round2);
 
     // Check counts match original.
@@ -150,7 +150,7 @@ TEST_CASE("proj workspace structure") {
 TEST_CASE("DependencyScope round-trips") {
     for (auto scope : {klspw::DependencyScope::compile, klspw::DependencyScope::test, klspw::DependencyScope::runtime,
                        klspw::DependencyScope::provided}) {
-        json j = scope;
+        const json j = scope;
         auto parsed = j.get<klspw::DependencyScope>();
         CHECK(parsed == scope);
     }
@@ -188,7 +188,7 @@ TEST_CASE("KotlinSettingsData preserves null optionals") {
     klspw::KotlinSettingsData ks;
     ks.name = "Kotlin";
     ks.module = "mod";
-    json j = ks;
+    const json j = ks;
     CHECK(j["productionOutputPath"].is_null());
     CHECK(j["testOutputPath"].is_null());
     CHECK(j["compilerArguments"].is_null());
@@ -206,7 +206,7 @@ TEST_CASE("ModuleDep round-trips") {
         .isExported = true,
         .isTestJar = true,
     };
-    json j = d;
+    const json j = d;
     CHECK(j["type"] == "module");
     CHECK(j["name"] == "core");
     CHECK(j["scope"] == "test");
@@ -224,7 +224,7 @@ TEST_CASE("ModuleDep round-trips") {
 
 TEST_CASE("SdkDep round-trips") {
     klspw::DependencyData d = klspw::SdkDep{.name = "JDK21", .kind = "JavaSDK"};
-    json j = d;
+    const json j = d;
     CHECK(j["type"] == "sdk");
     CHECK(j["name"] == "JDK21");
     CHECK(j["kind"] == "JavaSDK");
@@ -240,7 +240,7 @@ TEST_CASE("LibraryDep with isExported round-trips") {
         .scope = klspw::DependencyScope::provided,
         .isExported = true,
     };
-    json j = d;
+    const json j = d;
     CHECK(j["isExported"] == true);
 
     auto parsed = j.get<klspw::DependencyData>();
@@ -249,12 +249,12 @@ TEST_CASE("LibraryDep with isExported round-trips") {
 }
 
 TEST_CASE("unknown dependency type throws") {
-    json j = {{"type", "bogus"}};
+    const json j = {{"type", "bogus"}};
     CHECK_THROWS_AS(j.get<klspw::DependencyData>(), std::runtime_error);
 }
 
 TEST_CASE("unknown DependencyScope throws") {
-    json j = "bogus";
+    const json j = "bogus";
     CHECK_THROWS_AS(j.get<klspw::DependencyScope>(), std::runtime_error);
 }
 
@@ -284,7 +284,7 @@ TEST_CASE("XmlElement round-trips") {
 
 TEST_CASE("XmlElement empty fields are omitted") {
     klspw::XmlElement elem;
-    json j = elem;
+    const json j = elem;
     CHECK_FALSE(j.contains("tag"));
     CHECK_FALSE(j.contains("attributes"));
     CHECK_FALSE(j.contains("children"));
@@ -357,7 +357,7 @@ TEST_CASE("JavaSettingsData round-trips") {
     js.languageLevelId = "JDK_21";
     js.manifestAttributes = {{"Main-Class", "com.example.Main"}};
 
-    json j = js;
+    const json j = js;
     auto parsed = j.get<klspw::JavaSettingsData>();
     CHECK(parsed.module == "mymod");
     CHECK_FALSE(parsed.inheritedCompilerOutput);

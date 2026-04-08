@@ -1,3 +1,4 @@
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -135,7 +136,7 @@ TEST_CASE("parses project with skip reason") {
 
     REQUIRE(output.projects().size() == 1);
     CHECK(output.projects()[0].is_skipped());
-    CHECK(output.projects()[0].skip_reason()->find("No JavaPluginExtension") != std::string::npos);
+    CHECK(*output.projects()[0].skip_reason() == "No JavaPluginExtension/sourceSets on this project.");
     CHECK(output.projects()[0].source_sets().empty());
     CHECK(output.active_project_count() == 0);
 }
@@ -196,14 +197,14 @@ TEST_CASE("throws on malformed JSON") {
 }
 
 TEST_CASE("parses fixture file") {
-    std::ifstream file("test/fixtures/gradle_output.json");
+    const std::ifstream file("test/fixtures/gradle_output.json");
     REQUIRE(file.good());
     std::ostringstream buf;
     buf << file.rdbuf();
 
     const auto output = P::parse(buf.str());
 
-    CHECK(output.root_project().string().find("my-kotlin-service") != std::string::npos);
+    CHECK(output.root_project() == fs::path{"/home/dev/projects/my-kotlin-service"});
     CHECK_FALSE(output.projects().empty());
 
     const auto& root_proj = output.projects()[0];
@@ -222,24 +223,28 @@ TEST_CASE("parses fixture file") {
 
 namespace {
 
-fs::path make_test_temp_dir() {
-    auto dir = fs::temp_directory_path() / "klspw_gradle_test";
-    fs::create_directories(dir);
-    return dir;
-}
-
 struct TempDir {
     fs::path path;
-    TempDir() : path{make_test_temp_dir()} {}
+
+    TempDir() {
+        static std::atomic<int> counter{0};
+        path = fs::temp_directory_path() / ("klspw_gradle_test_" + std::to_string(counter++));
+        fs::create_directories(path);
+    }
+
     ~TempDir() { std::error_code ec; fs::remove_all(path, ec); }
+    TempDir(const TempDir&) = delete;
+    TempDir& operator=(const TempDir&) = delete;
+    TempDir(TempDir&&) = delete;
+    TempDir& operator=(TempDir&&) = delete;
 };
 
 } // namespace
 
 TEST_CASE("GradleRunner writes init script to specified temp dir") {
-    TempDir tmp;
+    const TempDir tmp;
     const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    klspw::GradleRunner runner(cfg.build(), tmp.path);
+    const klspw::GradleRunner runner(cfg.build(), tmp.path);
 
     const auto& path = runner.init_script_path();
     REQUIRE(fs::exists(path));
@@ -248,11 +253,11 @@ TEST_CASE("GradleRunner writes init script to specified temp dir") {
 }
 
 TEST_CASE("init script contains expected markers") {
-    TempDir tmp;
+    const TempDir tmp;
     const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    klspw::GradleRunner runner(cfg.build(), tmp.path);
+    const klspw::GradleRunner runner(cfg.build(), tmp.path);
 
-    std::ifstream f(runner.init_script_path());
+    const std::ifstream f(runner.init_script_path());
     REQUIRE(f.good());
     std::ostringstream buf;
     buf << f.rdbuf();
@@ -265,11 +270,11 @@ TEST_CASE("init script contains expected markers") {
 }
 
 TEST_CASE("init script is cleaned up on destruction") {
-    TempDir tmp;
+    const TempDir tmp;
     fs::path script_path;
     {
         const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-        klspw::GradleRunner runner(cfg.build(), tmp.path);
+        const klspw::GradleRunner runner(cfg.build(), tmp.path);
         script_path = runner.init_script_path();
         REQUIRE(fs::exists(script_path));
     }
@@ -278,7 +283,7 @@ TEST_CASE("init script is cleaned up on destruction") {
 
 TEST_CASE("GradleRunner uses default temp dir when not specified") {
     const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    klspw::GradleRunner runner(cfg.build());
+    const klspw::GradleRunner runner(cfg.build());
 
     const auto& path = runner.init_script_path();
     REQUIRE(fs::exists(path));
@@ -302,4 +307,392 @@ TEST_CASE("BuildConfig::gradle_args_for produces correct argument order") {
     CHECK(args[5] == "-p");
     CHECK(args[6] == "/tmp/proj");
     CHECK(args[7] == "dumpKotlinLspModel");
+}
+
+// --- SourceSet → workspace model conversion ---
+
+TEST_CASE("SourceSet::library_name_for_jar extracts stem") {
+    using SS = klspw::SourceSet;
+    CHECK(SS::library_name_for_jar("/path/to/kotlin-stdlib-2.0.0.jar") == "kotlin-stdlib-2.0.0");
+    CHECK(SS::library_name_for_jar("/cache/jackson-core-2.15.3.jar") == "jackson-core-2.15.3");
+    CHECK(SS::library_name_for_jar("simple.jar") == "simple");
+}
+
+TEST_CASE("SourceSet::to_source_roots classifies main sources") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": ["/tmp/proj/src/main/java", "/tmp/proj/src/main/kotlin", "/tmp/proj/src/main/resources"],
+                "javaSourceRoots": ["/tmp/proj/src/main/java"],
+                "resourcesRoots": ["/tmp/proj/src/main/resources"],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": [],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto& ss = output.projects()[0].source_sets()[0];
+    const auto roots = ss.to_source_roots();
+
+    // java + kotlin as java-source, resources as java-resource
+    REQUIRE(roots.size() == 3);
+    CHECK(roots[0].path == "/tmp/proj/src/main/java");
+    CHECK(roots[0].type == "java-source");
+    CHECK(roots[1].path == "/tmp/proj/src/main/kotlin");
+    CHECK(roots[1].type == "java-source");
+    CHECK(roots[2].path == "/tmp/proj/src/main/resources");
+    CHECK(roots[2].type == "java-resource");
+}
+
+TEST_CASE("SourceSet::to_source_roots classifies test sources") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "test",
+                "sourceRoots": ["/tmp/proj/src/test/kotlin", "/tmp/proj/src/test/resources"],
+                "javaSourceRoots": [],
+                "resourcesRoots": ["/tmp/proj/src/test/resources"],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": [],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto& ss = output.projects()[0].source_sets()[0];
+    const auto roots = ss.to_source_roots();
+
+    REQUIRE(roots.size() == 2);
+    CHECK(roots[0].type == "java-test");
+    CHECK(roots[1].type == "java-test-resource");
+}
+
+TEST_CASE("SourceSet::collect_libraries builds one library per jar") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": [],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": ["/cache/kotlin-stdlib-2.0.0.jar", "/cache/jackson-core-2.15.3.jar"],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto& ss = output.projects()[0].source_sets()[0];
+    const auto libs = ss.collect_libraries();
+
+    REQUIRE(libs.size() == 2);
+    CHECK(libs[0].name == "kotlin-stdlib-2.0.0");
+    CHECK(libs[0].roots.size() == 1);
+    CHECK(libs[0].roots[0].path == "/cache/kotlin-stdlib-2.0.0.jar");
+    CHECK(libs[1].name == "jackson-core-2.15.3");
+}
+
+TEST_CASE("SourceSet::collect_library_deps uses correct scope") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [
+                {"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"test","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/b.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}
+            ]
+        }]
+    })");
+
+    const auto& main_deps = output.projects()[0].source_sets()[0].collect_library_deps();
+    REQUIRE(main_deps.size() == 1);
+    const auto& main_dep = std::get<klspw::LibraryDep>(main_deps[0]);
+    CHECK(main_dep.scope == klspw::DependencyScope::compile);
+
+    const auto& test_deps = output.projects()[0].source_sets()[1].collect_library_deps();
+    REQUIRE(test_deps.size() == 1);
+    const auto& test_dep = std::get<klspw::LibraryDep>(test_deps[0]);
+    CHECK(test_dep.scope == klspw::DependencyScope::test);
+}
+
+// --- GradleProject → workspace model conversion ---
+
+TEST_CASE("GradleProject::to_module builds module with deps and content roots") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": ["/tmp/proj/src/main/kotlin"],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": ["/cache/lib-1.0.jar"],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto mod = output.projects()[0].to_module(false);
+
+    CHECK(mod.name == "proj");
+    CHECK(mod.type == "JAVA_MODULE");
+
+    // Should have: 1 library dep + inheritedSdk + moduleSource
+    REQUIRE(mod.dependencies.size() == 3);
+    CHECK(std::holds_alternative<klspw::LibraryDep>(mod.dependencies[0]));
+    CHECK(std::holds_alternative<klspw::InheritedSdk>(mod.dependencies[1]));
+    CHECK(std::holds_alternative<klspw::ModuleSource>(mod.dependencies[2]));
+
+    REQUIRE(mod.contentRoots.size() == 1);
+    CHECK(mod.contentRoots[0].path == "/tmp/proj");
+    REQUIRE(mod.contentRoots[0].sourceRoots.size() == 1);
+    CHECK(mod.contentRoots[0].sourceRoots[0].type == "java-source");
+}
+
+TEST_CASE("GradleProject::to_module excludes test source sets when include_tests=false") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [
+                {"name":"main","sourceRoots":["/tmp/proj/src/main/kotlin"],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"test","sourceRoots":["/tmp/proj/src/test/kotlin"],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar","/cache/junit.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}
+            ]
+        }]
+    })");
+
+    const auto mod_no_tests = output.projects()[0].to_module(false);
+    // Only main source root, only 1 lib dep (a.jar) + 2 sentinels
+    CHECK(mod_no_tests.contentRoots[0].sourceRoots.size() == 1);
+    CHECK(mod_no_tests.dependencies.size() == 3);
+
+    const auto mod_with_tests = output.projects()[0].to_module(true);
+    // main + test source roots, 2 lib deps (a.jar deduped, junit.jar) + 2 sentinels
+    CHECK(mod_with_tests.contentRoots[0].sourceRoots.size() == 2);
+    CHECK(mod_with_tests.dependencies.size() == 4);
+}
+
+TEST_CASE("GradleProject::to_module deduplicates library deps across source sets") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [
+                {"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar","/cache/b.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"test","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar","/cache/c.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}
+            ]
+        }]
+    })");
+
+    const auto mod = output.projects()[0].to_module(true);
+    // a.jar (from main, compile), b.jar (from main, compile), c.jar (from test, test) + 2 sentinels
+    // a.jar appears in both but should be deduped (first occurrence wins = compile scope)
+    size_t lib_dep_count = 0;
+    for (const auto& dep : mod.dependencies) {
+        if (std::holds_alternative<klspw::LibraryDep>(dep)) {
+            lib_dep_count++;
+        }
+    }
+    CHECK(lib_dep_count == 3); // a, b, c (a deduped)
+}
+
+TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": ["/tmp/proj/src/main/java", "/tmp/proj/src/main/kotlin"],
+                "javaSourceRoots": ["/tmp/proj/src/main/java"],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": [],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto ks = output.projects()[0].to_kotlin_settings(R"(J{"jvmTarget":"21"})", false);
+
+    CHECK(ks.name == "Kotlin");
+    CHECK(ks.module == "proj");
+    CHECK(ks.externalProjectId == ":proj:unspecified");
+    CHECK(ks.compilerArguments == R"(J{"jvmTarget":"21"})");
+
+    // source_roots: both java and kotlin dirs
+    REQUIRE(ks.sourceRoots.size() == 2);
+
+    // pure kotlin: only the kotlin dir (not the java dir)
+    REQUIRE(ks.pureKotlinSourceFolders.size() == 1);
+    CHECK(ks.pureKotlinSourceFolders[0] == "/tmp/proj/src/main/kotlin");
+}
+
+// --- GradleBuildOutput → WorkspaceData ---
+
+TEST_CASE("GradleBuildOutput::to_workspace builds complete workspace") {
+    const std::ifstream file("test/fixtures/gradle_output.json");
+    REQUIRE(file.good());
+    std::ostringstream buf;
+    buf << file.rdbuf();
+
+    const auto output = P::parse(buf.str());
+    const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", false);
+
+    // One active project → one module
+    REQUIRE(ws.modules.size() == 1);
+    CHECK(ws.modules[0].name == "my-kotlin-service");
+    CHECK(ws.modules[0].type == "JAVA_MODULE");
+
+    // Module has content roots with source roots
+    REQUIRE_FALSE(ws.modules[0].contentRoots.empty());
+    CHECK_FALSE(ws.modules[0].contentRoots[0].sourceRoots.empty());
+
+    // Module has library deps + inheritedSdk + moduleSource
+    CHECK(ws.modules[0].dependencies.size() >= 3);
+
+    // Libraries from main compile classpath (kotlin-stdlib + jackson-core)
+    CHECK(ws.libraries.size() == 2);
+
+    // Kotlin settings for the module
+    REQUIRE(ws.kotlinSettings.size() == 1);
+    CHECK(ws.kotlinSettings[0].module == "my-kotlin-service");
+    CHECK(ws.kotlinSettings[0].compilerArguments == R"(J{"jvmTarget":"21"})");
+}
+
+TEST_CASE("GradleBuildOutput::to_workspace deduplicates libraries across projects") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/root",
+        "projects": [
+            {
+                "projectPath": ":a",
+                "projectDir": "/tmp/root/a",
+                "kind": "jvm",
+                "plugins": [],
+                "sourceSets": [{"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/shared.jar","/cache/only-a.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}]
+            },
+            {
+                "projectPath": ":b",
+                "projectDir": "/tmp/root/b",
+                "kind": "jvm",
+                "plugins": [],
+                "sourceSets": [{"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/shared.jar","/cache/only-b.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}]
+            }
+        ]
+    })");
+
+    const auto ws = output.to_workspace("", false);
+
+    CHECK(ws.modules.size() == 2);
+    // shared.jar deduped: only 3 unique libraries
+    CHECK(ws.libraries.size() == 3);
+}
+
+TEST_CASE("GradleBuildOutput::to_workspace skips skipped projects") {
+    const auto output = P::parse(R"({
+        "rootProject": "/tmp/root",
+        "projects": [
+            {
+                "projectPath": ":active",
+                "projectDir": "/tmp/root/active",
+                "kind": "jvm",
+                "plugins": [],
+                "sourceSets": [{"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}]
+            },
+            {
+                "projectPath": ":skipped",
+                "projectDir": "/tmp/root/skipped",
+                "kind": "non-jvm",
+                "plugins": [],
+                "sourceSets": [],
+                "skipReason": "No JVM"
+            }
+        ]
+    })");
+
+    const auto ws = output.to_workspace("", false);
+
+    CHECK(ws.modules.size() == 1);
+    CHECK(ws.modules[0].name == "active");
+    CHECK(ws.kotlinSettings.size() == 1);
+}
+
+// --- Config::compiler_arguments_json ---
+
+TEST_CASE("Config::compiler_arguments_json formats J-prefixed JSON") {
+    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
+    const auto args = cfg.compiler_arguments_json();
+
+    CHECK(args.starts_with("J{"));
+    CHECK(args.ends_with("}"));
+    CHECK(args.contains("jvmTarget"));
+}
+
+// --- WorkspaceData round-trip through to_workspace ---
+
+TEST_CASE("to_workspace output serializes to valid JSON") {
+    const std::ifstream file("test/fixtures/gradle_output.json");
+    REQUIRE(file.good());
+    std::ostringstream buf;
+    buf << file.rdbuf();
+
+    const auto output = P::parse(buf.str());
+    const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", false);
+
+    // Serialize to JSON and back
+    const nlohmann::json j = ws;
+    const auto ws2 = j.get<klspw::WorkspaceData>();
+
+    CHECK(ws2.modules.size() == ws.modules.size());
+    CHECK(ws2.libraries.size() == ws.libraries.size());
+    CHECK(ws2.kotlinSettings.size() == ws.kotlinSettings.size());
 }

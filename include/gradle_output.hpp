@@ -4,15 +4,19 @@
 /// SourceSet, GradleProject, GradleBuildOutput represent the JSON
 /// emitted by the init script between KLSPW_BEGIN/KLSPW_END delimiters.
 /// GradleOutputParser extracts and deserializes that JSON.
+///
+/// Each type also owns its conversion to workspace model types (Tell Don't Ask).
+/// SourceSet → ContentRootData + LibraryData + LibraryDep
+/// GradleProject → ModuleData + KotlinSettingsData
+/// GradleBuildOutput → WorkspaceData
 
 #include <algorithm> // IWYU pragma: keep
 
 #include "common.hpp" // IWYU pragma: keep
 #include "json.hpp"
+#include "workspace_model.hpp"
 
 namespace klspw {
-
-class GradleOutputParser; // constructs the model types below
 
 // --- Gradle build output model ---
 
@@ -31,9 +35,88 @@ class SourceSet {
 
     bool is_test() const { return name_.contains("test") || name_.contains("Test"); }
 
-  private:
-    friend class GradleOutputParser;
+    // --- Workspace model conversion ---
 
+    /// Derive a library name from a jar path. Uses the filename stem.
+    /// E.g., "/path/to/kotlin-stdlib-2.0.0.jar" → "kotlin-stdlib-2.0.0".
+    static string library_name_for_jar(const fs::path& jar) { return jar.stem().string(); }
+
+    /// Classify source roots into SourceRootData with appropriate types.
+    /// Kotlin and Java sources both use "java-source"/"java-test" (kotlin-lsp convention).
+    /// Resources use "java-resource"/"java-test-resource".
+    vector<SourceRootData> to_source_roots() const {
+        const auto* const src_type = is_test() ? "java-test" : "java-source";
+        const auto* const res_type = is_test() ? "java-test-resource" : "java-resource";
+
+        vector<SourceRootData> roots;
+        for (const auto& sr : source_roots_) {
+            // Skip resource dirs that also appear in source_roots
+            bool is_resource = false;
+            for (const auto& rr : resources_roots_) {
+                if (sr == rr) {
+                    is_resource = true;
+                    break;
+                }
+            }
+            if (!is_resource) {
+                roots.push_back({.path = sr.string(), .type = src_type});
+            }
+        }
+        for (const auto& rr : resources_roots_) {
+            roots.push_back({.path = rr.string(), .type = res_type});
+        }
+        return roots;
+    }
+
+    /// Build a ContentRootData from this source set's roots under the given project dir.
+    ContentRootData to_content_root(const fs::path& project_dir) const {
+        return {
+            .path = project_dir.string(),
+            .sourceRoots = to_source_roots(),
+        };
+    }
+
+    /// Build LibraryData entries from the compile classpath.
+    /// Each jar becomes a library with a single CLASSES root.
+    vector<LibraryData> collect_libraries() const {
+        vector<LibraryData> libs;
+        libs.reserve(compile_classpath_.size());
+        for (const auto& jar : compile_classpath_) {
+            libs.push_back({
+                .name = library_name_for_jar(jar),
+                .roots = {{.path = jar.string()}},
+            });
+        }
+        return libs;
+    }
+
+    /// Build LibraryDep references for each compile classpath jar.
+    vector<DependencyData> collect_library_deps() const {
+        const auto scope = is_test() ? DependencyScope::test : DependencyScope::compile;
+        vector<DependencyData> deps;
+        deps.reserve(compile_classpath_.size());
+        for (const auto& jar : compile_classpath_) {
+            deps.emplace_back(LibraryDep{.name = library_name_for_jar(jar), .scope = scope});
+        }
+        return deps;
+    }
+
+    static SourceSet from_json(const json& j) {
+        SourceSet ss;
+        ss.name_ = read<string>(j, "name");
+        ss.source_roots_ = read_all<fs::path>(j, "sourceRoots", to_path);
+        ss.java_source_roots_ = read_all<fs::path>(j, "javaSourceRoots", to_path);
+        ss.resources_roots_ = read_all<fs::path>(j, "resourcesRoots", to_path);
+        ss.classes_dirs_ = read_all<fs::path>(j, "classesDirs", to_path);
+        ss.resources_dir_ = read_opt<string>(j, "resourcesDir").transform([](const string& s) { return fs::path{s}; });
+        ss.compile_classpath_ = read_all<fs::path>(j, "compileClasspath", to_path);
+        ss.runtime_classpath_ = read_all<fs::path>(j, "runtimeClasspath", to_path);
+        ss.compile_classpath_config_name_ = read_or<string>(j, "compileClasspathConfigurationName", "");
+        ss.runtime_classpath_config_name_ = read_or<string>(j, "runtimeClasspathConfigurationName", "");
+        return ss;
+    }
+
+  private:
     string name_;
     vector<fs::path> source_roots_;
     vector<fs::path> java_source_roots_;
@@ -58,9 +141,129 @@ class GradleProject {
     bool is_skipped() const { return skip_reason_.has_value(); }
     string module_name() const { return project_dir_.filename().string(); }
 
-  private:
-    friend class GradleOutputParser;
+    // --- Workspace model conversion ---
 
+    /// Build a ModuleData from this project's source sets.
+    /// Aggregates content roots and library deps from all (non-test if !include_tests) source sets.
+    ModuleData to_module(bool include_tests) const {
+        vector<ContentRootData> content_roots;
+        vector<DependencyData> deps;
+        set<string> seen_libs; // dedup library deps within a module
+
+        for (const auto& ss : source_sets_) {
+            if (!include_tests && ss.is_test()) {
+                continue;
+            }
+
+            // Merge source roots into a single content root per project dir
+            for (auto& sr : ss.to_source_roots()) {
+                // Find or create content root for this project dir
+                bool found = false;
+                for (auto& cr : content_roots) {
+                    if (cr.path == project_dir_.string()) {
+                        cr.sourceRoots.push_back(std::move(sr));
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    content_roots.push_back({
+                        .path = project_dir_.string(),
+                        .sourceRoots = {std::move(sr)},
+                    });
+                }
+            }
+
+            for (auto& dep : ss.collect_library_deps()) {
+                const auto& lib_dep = std::get<LibraryDep>(dep);
+                if (seen_libs.insert(lib_dep.name).second) {
+                    deps.push_back(std::move(dep));
+                }
+            }
+        }
+
+        // kotlin-lsp expects these two sentinel deps on every module
+        deps.push_back(InheritedSdk{});
+        deps.push_back(ModuleSource{});
+
+        return {
+            .name = module_name(),
+            .type = "JAVA_MODULE",
+            .dependencies = std::move(deps),
+            .contentRoots = std::move(content_roots),
+        };
+    }
+
+    /// Collect all unique libraries from this project's source sets.
+    vector<LibraryData> collect_libraries(bool include_tests) const {
+        vector<LibraryData> libs;
+        set<string> seen;
+        for (const auto& ss : source_sets_) {
+            if (!include_tests && ss.is_test()) {
+                continue;
+            }
+            for (auto& lib : ss.collect_libraries()) {
+                if (seen.insert(lib.name).second) {
+                    libs.push_back(std::move(lib));
+                }
+            }
+        }
+        return libs;
+    }
+
+    /// Build KotlinSettingsData for this project.
+    /// compiler_args_json: pre-formatted "J{...}" string from Config.
+    KotlinSettingsData to_kotlin_settings(const string& compiler_args_json, bool include_tests) const {
+        const auto mod_name = module_name();
+        strings source_roots;
+        strings pure_kotlin_folders;
+
+        for (const auto& ss : source_sets_) {
+            if (!include_tests && ss.is_test()) {
+                continue;
+            }
+            for (const auto& sr : ss.source_roots()) {
+                const auto sr_str = sr.string();
+                source_roots.push_back(sr_str);
+
+                // Pure Kotlin folder: appears in source_roots but not in java_source_roots
+                bool is_java = false;
+                for (const auto& jsr : ss.java_source_roots()) {
+                    if (sr == jsr) {
+                        is_java = true;
+                        break;
+                    }
+                }
+                if (!is_java) {
+                    pure_kotlin_folders.push_back(sr_str);
+                }
+            }
+        }
+
+        return {
+            .name = "Kotlin",
+            .sourceRoots = std::move(source_roots),
+            .module = mod_name,
+            .externalProjectId = format(":{}:unspecified", mod_name),
+            .pureKotlinSourceFolders = std::move(pure_kotlin_folders),
+            .compilerArguments = compiler_args_json,
+        };
+    }
+
+    static GradleProject from_json(const json& j) {
+        GradleProject proj;
+        proj.project_path_ = read<string>(j, "projectPath");
+        proj.project_dir_ = fs::path{read<string>(j, "projectDir")};
+        proj.kind_ = read<string>(j, "kind");
+        proj.plugins_ = read_all<string>(j, "plugins");
+        for (const auto& ss_json : j.at("sourceSets")) {
+            proj.source_sets_.push_back(SourceSet::from_json(ss_json));
+        }
+        proj.skip_reason_ = read_opt<string>(j, "skipReason");
+        return proj;
+    }
+
+  private:
     string project_path_;
     fs::path project_dir_;
     string kind_;
@@ -78,9 +281,47 @@ class GradleBuildOutput {
         return static_cast<size_t>(count_if(projects_, [](const auto& p) { return !p.is_skipped(); }));
     }
 
-  private:
-    friend class GradleOutputParser;
+    // --- Workspace model conversion ---
 
+    /// Build a complete WorkspaceData from all active projects.
+    /// Libraries are deduplicated by name across all projects (first occurrence wins).
+    WorkspaceData to_workspace(const string& compiler_args_json, bool include_tests) const {
+        vector<ModuleData> modules;
+        vector<LibraryData> libraries;
+        vector<KotlinSettingsData> kotlin_settings;
+        set<string> seen_libs;
+
+        for (const auto& proj : projects_) {
+            if (proj.is_skipped()) {
+                continue;
+            }
+
+            modules.push_back(proj.to_module(include_tests));
+            kotlin_settings.push_back(proj.to_kotlin_settings(compiler_args_json, include_tests));
+
+            for (auto& lib : proj.collect_libraries(include_tests)) {
+                if (seen_libs.insert(lib.name).second) {
+                    libraries.push_back(std::move(lib));
+                }
+            }
+        }
+
+        return {
+            .modules = std::move(modules),
+            .libraries = std::move(libraries),
+            .kotlinSettings = std::move(kotlin_settings),
+        };
+    }
+
+    static GradleBuildOutput from_json(const json& j) {
+        GradleBuildOutput output;
+        output.root_project_ = fs::path{read<string>(j, "rootProject")};
+        output.projects_ =
+            read_all<GradleProject>(j, "projects", [](const json& pj) { return GradleProject::from_json(pj); });
+        return output;
+    }
+
+  private:
     fs::path root_project_;
     vector<GradleProject> projects_;
 };
@@ -108,49 +349,14 @@ class GradleOutputParser {
     }
 
     static GradleBuildOutput parse(string_view json_str) {
-        nlohmann::json j;
+        json j;
         try {
-            j = nlohmann::json::parse(json_str);
-        } catch (const nlohmann::json::parse_error& e) {
+            j = json::parse(json_str);
+        } catch (const json::parse_error& e) {
             throw runtime_error(format("Failed to parse Gradle JSON: {}", e.what()));
         }
-
-        GradleBuildOutput output;
-        output.root_project_ = fs::path{read<string>(j, "rootProject")};
-        output.projects_ = read_all<GradleProject>(j, "projects", [](const json& pj) {
-            return parse_project(pj);
-        });
-        return output;
-    }
-
-  private:
-    static GradleProject parse_project(const nlohmann::json& j) {
-        GradleProject proj;
-        proj.project_path_ = read<string>(j, "projectPath");
-        proj.project_dir_ = fs::path{read<string>(j, "projectDir")};
-        proj.kind_ = read<string>(j, "kind");
-        proj.plugins_ = read_all<string>(j, "plugins");
-        for (const auto& ss_json : j.at("sourceSets")) {
-            proj.source_sets_.push_back(parse_source_set(ss_json));
-        }
-        proj.skip_reason_ = read_opt<string>(j, "skipReason");
-        return proj;
-    }
-
-    static SourceSet parse_source_set(const nlohmann::json& j) {
-        SourceSet ss;
-        ss.name_ = read<string>(j, "name");
-        ss.source_roots_ = read_all<fs::path>(j, "sourceRoots", to_path);
-        ss.java_source_roots_ = read_all<fs::path>(j, "javaSourceRoots", to_path);
-        ss.resources_roots_ = read_all<fs::path>(j, "resourcesRoots", to_path);
-        ss.classes_dirs_ = read_all<fs::path>(j, "classesDirs", to_path);
-        ss.resources_dir_ = read_opt<string>(j, "resourcesDir").transform([](const string& s) { return fs::path{s}; });
-        ss.compile_classpath_ = read_all<fs::path>(j, "compileClasspath", to_path);
-        ss.runtime_classpath_ = read_all<fs::path>(j, "runtimeClasspath", to_path);
-        ss.compile_classpath_config_name_ = read_or<string>(j, "compileClasspathConfigurationName", "");
-        ss.runtime_classpath_config_name_ = read_or<string>(j, "runtimeClasspathConfigurationName", "");
-        return ss;
+        return GradleBuildOutput::from_json(j);
     }
 };
 
-} // namespace klspw
+}

@@ -1,7 +1,16 @@
 #pragma once
 
 /// Workspace model matching the kotlin-lsp workspace.json schema.
-/// Reference: github.com/Kotlin/kotlin-lsp/.../model.kt
+/// Reference: github.com/Kotlin/kotlin-lsp/workspace-import/src/com/jetbrains/ls/imports/json/model.kt
+///
+/// kotlin-lsp's JsonWorkspaceImporter reads workspace.json and converts it to
+/// IntelliJ EntityStorage (modules, libraries, SDKs, Kotlin/Java settings).
+/// The JSON importer is tried first in the import chain, so generating a valid
+/// workspace.json is the fastest path to a working kotlin-lsp workspace.
+///
+/// Import order in kotlin-lsp: JSON → Maven → Gradle → JPS → Light.
+/// importWorkspaceData() processes: SDKs → Libraries → Modules → KotlinSettings → JavaSettings.
+/// Module dependencies reference libraries/SDKs by exact name match.
 ///
 /// Each type owns its serialization via to_json()/from_json() methods.
 /// ADL free functions delegate to these methods for nlohmann/json integration.
@@ -16,6 +25,8 @@ namespace klspw {
 
 // --- DependencyScope ---
 
+/// Maps to DependencyDataScope enum in model.kt.
+/// Determines when a dependency is available: compile-time, test-only, runtime-only, or provided.
 /// JSON "type" discriminator values: "compile", "test", "runtime", "provided".
 enum class DependencyScope : uint8_t { compile, test, runtime, provided };
 
@@ -53,6 +64,11 @@ inline void from_json(const json& j, DependencyScope& s) {
 
 // --- SourceRootData ---
 
+/// A source or resource folder within a ContentRootData.
+/// Maps to SourceRootData in model.kt.
+/// type values: "java-source", "java-test", "java-resource", "java-test-resource".
+/// Despite the "java-" prefix, Kotlin sources also use "java-source"/"java-test".
+
 struct SourceRootData {
     string path;
     string type;
@@ -72,6 +88,11 @@ inline void from_json(const json& j, SourceRootData& d) {
 }
 
 // --- ContentRootData ---
+
+/// Root directory containing module source code and resources.
+/// Maps to ContentRootData in model.kt.
+/// path is the project/module root directory (absolute).
+/// sourceRoots list the actual source folders within this root.
 
 struct ContentRootData {
     string path;
@@ -106,6 +127,14 @@ inline void from_json(const json& j, ContentRootData& d) {
 }
 
 // --- Dependency variant types ---
+
+/// Maps to DependencyData sealed class in model.kt.
+/// Five variants discriminated by "type" field:
+///   "module"       → ModuleDep (inter-module dependency)
+///   "library"      → LibraryDep (external jar, name must match a LibraryData.name)
+///   "sdk"          → SdkDep (explicit SDK reference)
+///   "inheritedSdk" → InheritedSdk (use project default SDK)
+///   "moduleSource" → ModuleSource (dependency on module's own compiled output)
 
 struct ModuleDep {
     string name;
@@ -162,15 +191,16 @@ struct SdkDep {
 };
 
 struct InheritedSdk {
-    static json to_json()  { return {{"type", "inheritedSdk"}}; }
+    static json to_json() { return {{"type", "inheritedSdk"}}; }
 };
 
 struct ModuleSource {
-    static json to_json()  { return {{"type", "moduleSource"}}; }
+    static json to_json() { return {{"type", "moduleSource"}}; }
 };
 
 /// Sealed dependency sum type, discriminated by "type" field in JSON.
 /// Mirrors kotlin-lsp's DependencyData sealed class with @SerialName annotations.
+/// ModuleSource and InheritedSdk should be present in every module's dependencies.
 using DependencyData = variant<ModuleDep, LibraryDep, SdkDep, InheritedSdk, ModuleSource>;
 
 inline void to_json(json& j, const DependencyData& d) {
@@ -275,6 +305,12 @@ inline void from_json(const json& j, FacetData& d) {
 
 // --- ModuleData ---
 
+/// A project module (Gradle subproject, Maven module).
+/// Maps to ModuleData in model.kt.
+/// name must be unique across the workspace.
+/// type is "JAVA_MODULE" for Kotlin/Java modules (null in root-workspace files).
+/// dependencies must include InheritedSdk + ModuleSource for kotlin-lsp to work.
+
 struct ModuleData {
     string name;
     opt_string type; ///< null in root-workspace files, "JAVA_MODULE" in proj-workspace files.
@@ -312,6 +348,11 @@ inline void from_json(const json& j, ModuleData& d) {
 
 // --- LibraryRootData ---
 
+/// A single JAR or directory within a library's classpath.
+/// Maps to LibraryRootData in model.kt.
+/// type: "CLASSES" (compiled code, default), "SOURCES" (source jars), "JAVADOC".
+/// inclusionOptions: "root_itself" (single jar), "archives_under_root" (dir of jars).
+
 struct LibraryRootData {
     string path;
     opt_string type;             ///< null = CLASSES (implicit default), "SOURCES", "JAVADOC".
@@ -341,6 +382,12 @@ inline void from_json(const json& j, LibraryRootData& d) {
 }
 
 // --- LibraryData ---
+
+/// An external library (jar dependency).
+/// Maps to LibraryData in model.kt.
+/// name must match exactly in DependencyData.Library references.
+/// level: "project" (shared across modules) or "module" (scoped to one module).
+/// type: null is written as explicit JSON null (kotlin-lsp expects the key present).
 
 struct LibraryData {
     string name;
@@ -407,6 +454,11 @@ inline void from_json(const json& j, SdkRootData& d) {
 
 // --- SdkData ---
 
+/// SDK definition (JDK, Android SDK, etc.).
+/// Maps to SdkData in model.kt.
+/// Either roots or homePath must be provided.
+/// For Java SDKs with homePath, kotlin-lsp can auto-calculate class roots.
+
 struct SdkData {
     string name;
     string type;
@@ -467,8 +519,12 @@ inline void from_json(const json& j, ConfigFileItemData& d) {
 
 // --- KotlinSettingsData ---
 
-/// Mirrors KotlinSettingsData from kotlin-lsp model.kt (~25 fields).
-/// Field count is inherent to the upstream schema; not a design smell.
+/// Kotlin compiler and module settings.
+/// Maps to KotlinSettingsData in model.kt (~25 fields, inherent to upstream schema).
+/// One entry per Kotlin module. module field must match a ModuleData.name.
+/// compilerArguments format: J{"jvmTarget":"21"} (JSON-in-string, prefixed with 'J').
+/// pureKotlinSourceFolders: source dirs containing only .kt files (no .java).
+/// kind: "default" for regular modules, "source_set_holder" for multiplatform.
 struct KotlinSettingsData {
     string name;
     strings sourceRoots;
@@ -573,6 +629,10 @@ inline void from_json(const json& j, KotlinSettingsData& d) {
 
 // --- JavaSettingsData ---
 
+/// Java compiler and output settings per module.
+/// Maps to JavaSettingsData in model.kt.
+/// module field must match a ModuleData.name.
+
 struct JavaSettingsData {
     string module;
     bool inheritedCompilerOutput = true;
@@ -616,6 +676,11 @@ inline void from_json(const json& j, JavaSettingsData& d) {
 
 // --- WorkspaceData ---
 
+/// Root container for the entire workspace.json.
+/// Maps to WorkspaceData in model.kt.
+/// kotlin-lsp's importWorkspaceData() processes in order: sdks → libraries → modules → kotlinSettings → javaSettings.
+/// Library names in module dependencies must match entries in the libraries list.
+
 struct WorkspaceData {
     vector<ModuleData> modules;
     vector<LibraryData> libraries;
@@ -651,4 +716,4 @@ inline void from_json(const json& j, WorkspaceData& d) {
     d = WorkspaceData::from_json(j);
 }
 
-} // namespace klspw
+}
