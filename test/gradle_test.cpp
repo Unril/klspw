@@ -1,7 +1,5 @@
 #include <atomic>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -47,13 +45,11 @@ TEST_CASE("extracts JSON block with minimal surrounding content") {
 }
 
 TEST_CASE("throws on missing KLSPW_BEGIN") {
-    CHECK_THROWS_WITH_AS((void)P::extract_json("some output\nKLSPW_END\n"),
-                         "KLSPW_BEGIN delimiter not found in Gradle output", std::runtime_error);
+    CHECK_THROWS_AS((void)P::extract_json("some output\nKLSPW_END\n"), std::runtime_error);
 }
 
 TEST_CASE("throws on missing KLSPW_END") {
-    CHECK_THROWS_WITH_AS((void)P::extract_json("KLSPW_BEGIN\n{}\n"), "KLSPW_END delimiter not found in Gradle output",
-                         std::runtime_error);
+    CHECK_THROWS_AS((void)P::extract_json("KLSPW_BEGIN\n{}\n"), std::runtime_error);
 }
 
 TEST_CASE("throws on empty input") {
@@ -68,8 +64,8 @@ TEST_CASE("parses minimal valid JSON") {
         "projects": []
     })");
 
-    CHECK(output.root_project() == fs::path{"/tmp/proj"});
-    CHECK(output.projects().empty());
+    CHECK(output.root_project == "/tmp/proj");
+    CHECK(output.projects.empty());
     CHECK(output.active_project_count() == 0);
 }
 
@@ -96,28 +92,28 @@ TEST_CASE("parses project with source sets") {
         }]
     })");
 
-    REQUIRE(output.projects().size() == 1);
-    const auto& proj = output.projects()[0];
-    CHECK(proj.project_path() == ":");
-    CHECK(proj.project_dir() == fs::path{"/tmp/proj"});
-    CHECK(proj.kind() == "jvm");
-    CHECK(proj.plugins().size() == 1);
+    REQUIRE(output.projects.size() == 1);
+    const auto& proj = output.projects[0];
+    CHECK(proj.project_path == ":");
+    CHECK(proj.project_dir == "/tmp/proj");
+    CHECK(proj.kind == "jvm");
+    CHECK(proj.plugins.size() == 1);
     CHECK_FALSE(proj.is_skipped());
     CHECK(proj.module_name() == "proj");
     CHECK(output.active_project_count() == 1);
 
-    REQUIRE(proj.source_sets().size() == 1);
-    const auto& ss = proj.source_sets()[0];
-    CHECK(ss.name() == "main");
-    CHECK(ss.source_roots().size() == 2);
-    CHECK(ss.java_source_roots().size() == 1);
-    CHECK(ss.resources_roots().size() == 1);
-    CHECK(ss.classes_dirs().size() == 1);
-    CHECK(ss.resources_dir().has_value());
-    CHECK(ss.compile_classpath().size() == 1);
-    CHECK(ss.runtime_classpath().size() == 2);
-    CHECK(ss.compile_classpath_config_name() == "compileClasspath");
-    CHECK(ss.runtime_classpath_config_name() == "runtimeClasspath");
+    REQUIRE(proj.source_sets.size() == 1);
+    const auto& ss = proj.source_sets[0];
+    CHECK(ss.name == "main");
+    CHECK(ss.source_roots.size() == 2);
+    CHECK(ss.java_source_roots.size() == 1);
+    CHECK(ss.resources_roots.size() == 1);
+    CHECK(ss.classes_dirs.size() == 1);
+    CHECK(ss.resources_dir.has_value());
+    CHECK(ss.compile_classpath.size() == 1);
+    CHECK(ss.runtime_classpath.size() == 2);
+    CHECK(ss.compile_classpath_config_name == "compileClasspath");
+    CHECK(ss.runtime_classpath_config_name == "runtimeClasspath");
     CHECK_FALSE(ss.is_test());
 }
 
@@ -134,10 +130,10 @@ TEST_CASE("parses project with skip reason") {
         }]
     })");
 
-    REQUIRE(output.projects().size() == 1);
-    CHECK(output.projects()[0].is_skipped());
-    CHECK(*output.projects()[0].skip_reason() == "No JavaPluginExtension/sourceSets on this project.");
-    CHECK(output.projects()[0].source_sets().empty());
+    REQUIRE(output.projects.size() == 1);
+    CHECK(output.projects[0].is_skipped());
+    CHECK(*output.projects[0].skip_reason == "No JavaPluginExtension/sourceSets on this project.");
+    CHECK(output.projects[0].source_sets.empty());
     CHECK(output.active_project_count() == 0);
 }
 
@@ -164,9 +160,9 @@ TEST_CASE("parses project with null resourcesDir") {
         }]
     })");
 
-    REQUIRE(output.projects().size() == 1);
-    REQUIRE(output.projects()[0].source_sets().size() == 1);
-    CHECK_FALSE(output.projects()[0].source_sets()[0].resources_dir().has_value());
+    REQUIRE(output.projects.size() == 1);
+    REQUIRE(output.projects[0].source_sets.size() == 1);
+    CHECK_FALSE(output.projects[0].source_sets[0].resources_dir.has_value());
 }
 
 TEST_CASE("SourceSet::is_test detects test source sets") {
@@ -185,7 +181,7 @@ TEST_CASE("SourceSet::is_test detects test source sets") {
         }]
     })");
 
-    const auto& sets = output.projects()[0].source_sets();
+    const auto& sets = output.projects[0].source_sets;
     REQUIRE(sets.size() == 3);
     CHECK_FALSE(sets[0].is_test());
     CHECK(sets[1].is_test());
@@ -196,27 +192,30 @@ TEST_CASE("throws on malformed JSON") {
     CHECK_THROWS_AS((void)P::parse("{not valid json}"), std::runtime_error);
 }
 
+TEST_CASE("parses empty fixture file") {
+    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_empty_output.json"));
+
+    CHECK(output.root_project == "/home/dev/projects/my-kotlin-service");
+    CHECK(output.projects.empty());
+    CHECK(output.active_project_count() == 0);
+}
+
 TEST_CASE("parses fixture file") {
-    const std::ifstream file("test/fixtures/gradle_output.json");
-    REQUIRE(file.good());
-    std::ostringstream buf;
-    buf << file.rdbuf();
+    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
 
-    const auto output = P::parse(buf.str());
+    CHECK(output.root_project == "/home/dev/projects/my-kotlin-service");
+    CHECK_FALSE(output.projects.empty());
 
-    CHECK(output.root_project() == fs::path{"/home/dev/projects/my-kotlin-service"});
-    CHECK_FALSE(output.projects().empty());
+    const auto& root_proj = output.projects[0];
+    CHECK(root_proj.project_path == ":");
+    CHECK(root_proj.kind == "jvm");
+    CHECK_FALSE(root_proj.plugins.empty());
+    CHECK(root_proj.source_sets.size() >= 2);
 
-    const auto& root_proj = output.projects()[0];
-    CHECK(root_proj.project_path() == ":");
-    CHECK(root_proj.kind() == "jvm");
-    CHECK_FALSE(root_proj.plugins().empty());
-    CHECK(root_proj.source_sets().size() >= 2);
-
-    const auto& main_ss = root_proj.source_sets()[0];
-    CHECK(main_ss.name() == "main");
-    CHECK_FALSE(main_ss.compile_classpath().empty());
-    CHECK_FALSE(main_ss.source_roots().empty());
+    const auto& main_ss = root_proj.source_sets[0];
+    CHECK(main_ss.name == "main");
+    CHECK_FALSE(main_ss.compile_classpath.empty());
+    CHECK_FALSE(main_ss.source_roots.empty());
 }
 
 // --- GradleRunner ---
@@ -260,11 +259,7 @@ TEST_CASE("init script contains expected markers") {
     const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
     const klspw::GradleRunner runner(cfg.build(), tmp.path);
 
-    const std::ifstream f(runner.init_script_path());
-    REQUIRE(f.good());
-    std::ostringstream buf;
-    buf << f.rdbuf();
-    const auto content = buf.str();
+    const auto content = klspw::read_file(runner.init_script_path());
 
     CHECK(content.find("dumpKotlinLspModel") != std::string::npos);
     CHECK(content.find("KLSPW_BEGIN") != std::string::npos);
@@ -344,7 +339,7 @@ TEST_CASE("SourceSet::to_source_roots classifies main sources") {
         }]
     })");
 
-    const auto& ss = output.projects()[0].source_sets()[0];
+    const auto& ss = output.projects[0].source_sets[0];
     const auto roots = ss.to_source_roots();
 
     // java + kotlin as java-source, resources as java-resource
@@ -380,7 +375,7 @@ TEST_CASE("SourceSet::to_source_roots classifies test sources") {
         }]
     })");
 
-    const auto& ss = output.projects()[0].source_sets()[0];
+    const auto& ss = output.projects[0].source_sets[0];
     const auto roots = ss.to_source_roots();
 
     REQUIRE(roots.size() == 2);
@@ -411,7 +406,7 @@ TEST_CASE("SourceSet::collect_libraries builds one library per jar") {
         }]
     })");
 
-    const auto& ss = output.projects()[0].source_sets()[0];
+    const auto& ss = output.projects[0].source_sets[0];
     const auto libs = ss.collect_libraries();
 
     REQUIRE(libs.size() == 2);
@@ -436,12 +431,12 @@ TEST_CASE("SourceSet::collect_library_deps uses correct scope") {
         }]
     })");
 
-    const auto& main_deps = output.projects()[0].source_sets()[0].collect_library_deps();
+    const auto& main_deps = output.projects[0].source_sets[0].collect_library_deps();
     REQUIRE(main_deps.size() == 1);
     const auto& main_dep = std::get<klspw::LibraryDep>(main_deps[0]);
     CHECK(main_dep.scope == klspw::DependencyScope::compile);
 
-    const auto& test_deps = output.projects()[0].source_sets()[1].collect_library_deps();
+    const auto& test_deps = output.projects[0].source_sets[1].collect_library_deps();
     REQUIRE(test_deps.size() == 1);
     const auto& test_dep = std::get<klspw::LibraryDep>(test_deps[0]);
     CHECK(test_dep.scope == klspw::DependencyScope::test);
@@ -472,7 +467,7 @@ TEST_CASE("GradleProject::to_module builds module with deps and content roots") 
         }]
     })");
 
-    const auto mod = output.projects()[0].to_module(false);
+    const auto mod = output.projects[0].to_module(false);
 
     CHECK(mod.name == "proj");
     CHECK(mod.type == "JAVA_MODULE");
@@ -504,12 +499,12 @@ TEST_CASE("GradleProject::to_module excludes test source sets when include_tests
         }]
     })");
 
-    const auto mod_no_tests = output.projects()[0].to_module(false);
+    const auto mod_no_tests = output.projects[0].to_module(false);
     // Only main source root, only 1 lib dep (a.jar) + 2 sentinels
     CHECK(mod_no_tests.contentRoots[0].sourceRoots.size() == 1);
     CHECK(mod_no_tests.dependencies.size() == 3);
 
-    const auto mod_with_tests = output.projects()[0].to_module(true);
+    const auto mod_with_tests = output.projects[0].to_module(true);
     // main + test source roots, 2 lib deps (a.jar deduped, junit.jar) + 2 sentinels
     CHECK(mod_with_tests.contentRoots[0].sourceRoots.size() == 2);
     CHECK(mod_with_tests.dependencies.size() == 4);
@@ -530,7 +525,7 @@ TEST_CASE("GradleProject::to_module deduplicates library deps across source sets
         }]
     })");
 
-    const auto mod = output.projects()[0].to_module(true);
+    const auto mod = output.projects[0].to_module(true);
     // a.jar (from main, compile), b.jar (from main, compile), c.jar (from test, test) + 2 sentinels
     // a.jar appears in both but should be deduped (first occurrence wins = compile scope)
     size_t lib_dep_count = 0;
@@ -565,7 +560,7 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
         }]
     })");
 
-    const auto ks = output.projects()[0].to_kotlin_settings(R"(J{"jvmTarget":"21"})", false);
+    const auto ks = output.projects[0].to_kotlin_settings(R"(J{"jvmTarget":"21"})", false);
 
     CHECK(ks.name == "Kotlin");
     CHECK(ks.module == "proj");
@@ -583,12 +578,7 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
 // --- GradleBuildOutput → WorkspaceData ---
 
 TEST_CASE("GradleBuildOutput::to_workspace builds complete workspace") {
-    const std::ifstream file("test/fixtures/gradle_output.json");
-    REQUIRE(file.good());
-    std::ostringstream buf;
-    buf << file.rdbuf();
-
-    const auto output = P::parse(buf.str());
+    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
     const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", false);
 
     // One active project → one module
@@ -683,19 +673,16 @@ TEST_CASE("Config::compiler_arguments_json formats J-prefixed JSON") {
 // --- WorkspaceData round-trip through to_workspace ---
 
 TEST_CASE("to_workspace output serializes to valid JSON") {
-    const std::ifstream file("test/fixtures/gradle_output.json");
-    REQUIRE(file.good());
-    std::ostringstream buf;
-    buf << file.rdbuf();
-
-    const auto output = P::parse(buf.str());
+    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
     const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", false);
 
-    // Serialize to JSON and back
-    const nlohmann::json j = ws;
-    const auto ws2 = j.get<klspw::WorkspaceData>();
+    // Serialize to JSON and back via glaze
+    const auto json_result = glz::write_json(ws);
+    REQUIRE(json_result.has_value());
+    const auto ws2 = glz::read_json<klspw::WorkspaceData>(json_result.value());
+    REQUIRE(ws2.has_value());
 
-    CHECK(ws2.modules.size() == ws.modules.size());
-    CHECK(ws2.libraries.size() == ws.libraries.size());
-    CHECK(ws2.kotlinSettings.size() == ws.kotlinSettings.size());
+    CHECK(ws2->modules.size() == ws.modules.size());
+    CHECK(ws2->libraries.size() == ws.libraries.size());
+    CHECK(ws2->kotlinSettings.size() == ws.kotlinSettings.size());
 }

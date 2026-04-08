@@ -1,7 +1,6 @@
 #pragma once
 
-#include <fstream>
-
+#include <spdlog/spdlog.h>
 #include <unistd.h>
 
 #include "config.hpp"
@@ -12,8 +11,9 @@ namespace klspw {
 
 /// Manages the Gradle init script lifecycle and process execution.
 ///
-/// Writes the embedded init script to a temp directory, then runs Gradle
-/// against each kotlin_gradle root. Cleans up the script on destruction.
+/// Writes the embedded init script to a temp directory on construction,
+/// then runs Gradle against each kotlin_gradle root via run().
+/// The script is removed on close() or destruction.
 class GradleRunner {
   public:
     GradleRunner(const GradleRunner&) = delete;
@@ -29,8 +29,24 @@ class GradleRunner {
         : build_{std::move(build)}, init_script_path_{write_init_script(temp_dir)} {}
 
     ~GradleRunner() noexcept {
+        try {
+            close();
+        } catch (const std::exception& e) {
+            spdlog::warn("Failed to clean up init script: {}", e.what());
+        }
+    }
+
+    /// Remove the init script from disk. Throws on failure.
+    /// Safe to call multiple times -- subsequent calls are no-ops.
+    void close() {
+        if (init_script_path_.empty()) {
+            return;
+        }
+        const auto path_copy = init_script_path_;
+        init_script_path_.clear();
         std::error_code ec;
-        fs::remove(init_script_path_, ec);
+        const auto removed = fs::remove(path_copy, ec);
+        require(removed && !ec, "Failed to remove init script {}: {}", path_copy, ec);
     }
 
     /// Run Gradle against a root directory. Returns captured stdout.
@@ -47,15 +63,7 @@ class GradleRunner {
     static fs::path write_init_script(const fs::path& dir) {
         fs::create_directories(dir);
         const auto path = dir / format("init.{}.gradle.kts", ::getpid());
-        std::ofstream out(path);
-        if (!out) {
-            throw runtime_error(format("Failed to write init script to: {}", path.string()));
-        }
-        out << init_script_content;
-        out.close();
-        if (!out) {
-            throw runtime_error(format("Failed to flush init script to: {}", path.string()));
-        }
+        write_file(path, init_script_content);
         return path;
     }
 };

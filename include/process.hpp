@@ -25,26 +25,17 @@ class ProcessRunner {
         const auto cmd = join(args_);
 
         const auto start_ec = proc.start(args_, opts);
-        if (start_ec) {
-            throw runtime_error(format("Failed to start process: {}\n  Command: {}", start_ec.message(), cmd));
-        }
+        require(!start_ec, "Failed to start process: {}\n  Command: {}", start_ec, cmd);
 
         string stdout_output;
         reproc::sink::discard discard_sink;
         const auto drain_ec = reproc::drain(proc, reproc::sink::string(stdout_output), discard_sink);
-        if (drain_ec) {
-            throw runtime_error(format("Failed to read process output: {}\n  Command: {}", drain_ec.message(), cmd));
-        }
+        require(!drain_ec, "Failed to read process output: {}\n  Command: {}", drain_ec, cmd);
 
         const auto [status, wait_ec] = proc.wait(reproc::infinite);
-        if (wait_ec) {
-            throw runtime_error(format("Failed waiting for process: {}\n  Command: {}", wait_ec.message(), cmd));
-        }
-
-        if (status != 0) {
-            throw runtime_error(
-                format("Process exited with code {}\n  Command: {}\n  Output: {:.500}", status, cmd, stdout_output));
-        }
+        require(!wait_ec, "Failed waiting for process: {}\n  Command: {}", wait_ec, cmd);
+        require(status == 0, "Process exited with code {}\n  Command: {}\n  Output: {:.500}", status, cmd,
+                stdout_output);
 
         return stdout_output;
     }
