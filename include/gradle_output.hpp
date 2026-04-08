@@ -20,6 +20,11 @@ namespace klspw {
 
 // --- Gradle build output model ---
 
+/// A Gradle source set (main, test, integrationTest, etc.).
+/// Maps to the "sourceSets" array in the init script's JSON output.
+/// source_roots includes all dirs (kotlin + java + resources); java_source_roots
+/// is the Java-only subset. The difference identifies pure-Kotlin folders for
+/// KotlinSettingsData.pureKotlinSourceFolders.
 class SourceSet {
   public:
     const string& name() const { return name_; }
@@ -33,6 +38,7 @@ class SourceSet {
     const string& compile_classpath_config_name() const { return compile_classpath_config_name_; }
     const string& runtime_classpath_config_name() const { return runtime_classpath_config_name_; }
 
+    /// Heuristic: any source set whose name contains "test" or "Test".
     bool is_test() const { return name_.contains("test") || name_.contains("Test"); }
 
     // --- Workspace model conversion ---
@@ -129,6 +135,11 @@ class SourceSet {
     string runtime_classpath_config_name_;
 };
 
+/// A Gradle (sub)project from the init script output.
+/// Module name is derived from the last path component of project_dir
+/// (e.g., "/home/dev/my-service" → "my-service").
+/// Skipped projects (non-JVM, no source sets) carry a skip_reason and are
+/// excluded from workspace generation.
 class GradleProject {
   public:
     const string& project_path() const { return project_path_; }
@@ -272,6 +283,9 @@ class GradleProject {
     opt_string skip_reason_;
 };
 
+/// Top-level Gradle build output: root project path + all discovered (sub)projects.
+/// Produced by GradleOutputParser::parse() from the init script's JSON.
+/// to_workspace() is the main entry point for the Gradle → workspace.json pipeline.
 class GradleBuildOutput {
   public:
     const fs::path& root_project() const { return root_project_; }
@@ -328,6 +342,9 @@ class GradleBuildOutput {
 
 // --- Parser ---
 
+/// Extracts and parses the structured JSON payload from raw Gradle output.
+/// The init script wraps its JSON between KLSPW_BEGIN/KLSPW_END delimiters
+/// so it can be reliably separated from Gradle's noisy human-readable output.
 class GradleOutputParser {
   public:
     static constexpr string_view begin_delimiter = "KLSPW_BEGIN";

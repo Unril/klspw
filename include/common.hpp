@@ -42,6 +42,9 @@ using strings = vector<string>;
 using opt_string = optional<string>;
 
 // --- String utilities ---
+
+/// Trim leading/trailing whitespace (space, \n, \r) from a string_view.
+/// Tabs are intentionally not trimmed -- Gradle output uses spaces/newlines.
 inline string_view trim(string_view sv) {
     constexpr string_view ws = " \n\r";
     const auto start = sv.find_first_not_of(ws);

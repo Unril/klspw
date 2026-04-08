@@ -1,10 +1,16 @@
 #pragma once
 
+/// Config model for workspace-kotlin-lsp-config.yaml (version 1).
+/// Owns YAML loading, path normalization (relative to config file dir),
+/// and Gradle argument assembly.
+
 #include "common.hpp" // IWYU pragma: keep
 #include "yaml.hpp"
 
 namespace klspw {
 
+/// kotlin_gradle: Gradle-based Kotlin/JVM project, runs init script.
+/// java_binary: pre-built Java project, scans lib_dir for jars directly.
 enum class RootKind : std::uint8_t {
     kotlin_gradle,
     java_binary,
@@ -20,11 +26,14 @@ inline RootKind root_kind_from_string(string_view s) {
     throw runtime_error(format("Unknown root kind: {}", s));
 }
 
+/// Gradle build command and extra arguments.
+/// Owns gradle_args_for() which assembles the full command line for a root.
 class BuildConfig {
   public:
     const strings& command() const { return command_; }
     const strings& gradle_args() const { return gradle_args_; }
 
+    /// Assemble full Gradle command: command... --init-script <path> gradle_args... -p <root> dumpKotlinLspModel
     strings gradle_args_for(const fs::path& root, const fs::path& init_script) const {
         strings args;
         args.reserve(command_.size() + gradle_args_.size() + 4);
@@ -48,12 +57,15 @@ class BuildConfig {
     strings gradle_args_;
 };
 
+/// Boolean flags controlling workspace generation behavior.
 struct Options {
-    bool include_tests = false;
-    bool attach_sources = true;
-    bool follow_symlinks = true;
+    bool include_tests = false;   ///< Include test source sets in modules.
+    bool attach_sources = true;   ///< Discover and attach source jars to libraries.
+    bool follow_symlinks = true;  ///< Follow symlinks during source discovery.
 };
 
+/// A project root to process. Paths are absolute (normalized against config dir).
+/// lib_dir is relative to path; only used for java_binary roots.
 class RootEntry {
   public:
     explicit RootEntry(RootKind kind, fs::path path, fs::path lib_dir = "build/lib")
@@ -70,6 +82,8 @@ class RootEntry {
     fs::path lib_dir_;
 };
 
+/// Top-level config loaded from workspace-kotlin-lsp-config.yaml.
+/// All paths are normalized to absolute at load time (relative to config file dir).
 class Config {
   public:
     static Config from_yaml(const fs::path& config_path) {

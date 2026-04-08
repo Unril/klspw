@@ -9,6 +9,7 @@ find_package(CLI11 CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(reproc++ CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 # Embed resources/init.gradle.kts into a generated header at configure time.
 file(
@@ -60,6 +61,7 @@ target_link_libraries(
         yaml-cpp::yaml-cpp
         nlohmann_json::nlohmann_json
         reproc++
+        spdlog::spdlog
 )
 
 add_executable(klspw src/main.cpp)
