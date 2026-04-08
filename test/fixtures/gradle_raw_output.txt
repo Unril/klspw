@@ -1,0 +1,85 @@
+> Configure project :
+Kotlin plugin loaded for project 'my-kotlin-service'
+w: Some Kotlin compiler warning about deprecated API usage
+
+> Task :dumpKotlinLspModel
+KLSPW_BEGIN
+{
+  "rootProject": "/home/dev/projects/my-kotlin-service",
+  "projects": [
+    {
+      "projectPath": ":",
+      "projectDir": "/home/dev/projects/my-kotlin-service",
+      "kind": "jvm",
+      "plugins": [
+        "org.gradle.api.plugins.JavaPlugin_Decorated",
+        "org.jetbrains.kotlin.gradle.plugin.KotlinPluginWrapper"
+      ],
+      "sourceSets": [
+        {
+          "name": "main",
+          "sourceRoots": [
+            "/home/dev/projects/my-kotlin-service/src/main/java",
+            "/home/dev/projects/my-kotlin-service/src/main/kotlin",
+            "/home/dev/projects/my-kotlin-service/src/main/resources"
+          ],
+          "javaSourceRoots": [
+            "/home/dev/projects/my-kotlin-service/src/main/java"
+          ],
+          "resourcesRoots": [
+            "/home/dev/projects/my-kotlin-service/src/main/resources"
+          ],
+          "classesDirs": [
+            "/home/dev/projects/my-kotlin-service/build/classes/java/main",
+            "/home/dev/projects/my-kotlin-service/build/classes/kotlin/main"
+          ],
+          "resourcesDir": "/home/dev/projects/my-kotlin-service/build/resources/main",
+          "compileClasspath": [
+            "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-core/2.15.3/jackson-core-2.15.3.jar"
+          ],
+          "runtimeClasspath": [
+            "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-core/2.15.3/jackson-core-2.15.3.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/ch.qos.logback/logback-classic/1.4.14/logback-classic-1.4.14.jar"
+          ],
+          "compileClasspathConfigurationName": "compileClasspath",
+          "runtimeClasspathConfigurationName": "runtimeClasspath"
+        },
+        {
+          "name": "test",
+          "sourceRoots": [
+            "/home/dev/projects/my-kotlin-service/src/test/java",
+            "/home/dev/projects/my-kotlin-service/src/test/kotlin",
+            "/home/dev/projects/my-kotlin-service/src/test/resources"
+          ],
+          "javaSourceRoots": [
+            "/home/dev/projects/my-kotlin-service/src/test/java"
+          ],
+          "resourcesRoots": [
+            "/home/dev/projects/my-kotlin-service/src/test/resources"
+          ],
+          "classesDirs": [
+            "/home/dev/projects/my-kotlin-service/build/classes/java/test",
+            "/home/dev/projects/my-kotlin-service/build/classes/kotlin/test"
+          ],
+          "resourcesDir": "/home/dev/projects/my-kotlin-service/build/resources/test",
+          "compileClasspath": [
+            "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/org.junit.jupiter/junit-jupiter-api/5.10.1/junit-jupiter-api-5.10.1.jar"
+          ],
+          "runtimeClasspath": [
+            "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/org.junit.jupiter/junit-jupiter-api/5.10.1/junit-jupiter-api-5.10.1.jar"
+          ],
+          "compileClasspathConfigurationName": "testCompileClasspath",
+          "runtimeClasspathConfigurationName": "testRuntimeClasspath"
+        }
+      ]
+    }
+  ]
+}
+KLSPW_END
+
+BUILD SUCCESSFUL in 3s
+1 actionable task: 1 executed

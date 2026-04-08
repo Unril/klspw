@@ -1,0 +1,149 @@
+{
+  "modules": [
+    {
+      "name": "MyKotlinService-1.0",
+      "dependencies": [
+        {
+          "type": "library",
+          "name": "kotlin-stdlib-2.0",
+          "scope": "compile"
+        },
+        {
+          "type": "library",
+          "name": "jackson-core-2.15",
+          "scope": "compile"
+        },
+        {
+          "type": "library",
+          "name": "junit-jupiter-5.10",
+          "scope": "test"
+        },
+        {
+          "type": "library",
+          "name": "logback-classic-1.4",
+          "scope": "runtime"
+        },
+        {
+          "type": "library",
+          "name": "lombok-1.18",
+          "scope": "provided"
+        },
+        {
+          "type": "inheritedSdk"
+        },
+        {
+          "type": "moduleSource"
+        }
+      ],
+      "contentRoots": [
+        {
+          "path": "/home/dev/projects/my-kotlin-service",
+          "sourceRoots": [
+            {
+              "path": "/home/dev/projects/my-kotlin-service/src/main/kotlin",
+              "type": "java-source"
+            },
+            {
+              "path": "/home/dev/projects/my-kotlin-service/src/main/java",
+              "type": "java-source"
+            },
+            {
+              "path": "/home/dev/projects/my-kotlin-service/src/test/kotlin",
+              "type": "java-test"
+            },
+            {
+              "path": "/home/dev/projects/my-kotlin-service/build/generated/ksp/main",
+              "type": "java-source"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "libraries": [
+    {
+      "name": "kotlin-stdlib-2.0",
+      "type": "java-imported",
+      "roots": [
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0.jar"
+        },
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0-sources.jar",
+          "type": "SOURCES"
+        }
+      ]
+    },
+    {
+      "name": "jackson-core-2.15",
+      "type": "java-imported",
+      "roots": [
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-core/2.15.3/jackson-core-2.15.3.jar"
+        }
+      ]
+    },
+    {
+      "name": "junit-jupiter-5.10",
+      "type": "java-imported",
+      "roots": [
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/org.junit.jupiter/junit-jupiter-api/5.10.1/junit-jupiter-api-5.10.1.jar"
+        }
+      ]
+    },
+    {
+      "name": "logback-classic-1.4",
+      "type": "java-imported",
+      "roots": [
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/ch.qos.logback/logback-classic/1.4.14/logback-classic-1.4.14.jar"
+        }
+      ]
+    },
+    {
+      "name": "lombok-1.18",
+      "type": "java-imported",
+      "roots": [
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/org.projectlombok/lombok/1.18.30/lombok-1.18.30.jar"
+        }
+      ]
+    }
+  ],
+  "kotlinSettings": [
+    {
+      "name": "Kotlin",
+      "sourceRoots": [
+        "/home/dev/projects/my-kotlin-service/src/main/kotlin",
+        "/home/dev/projects/my-kotlin-service/src/test/kotlin"
+      ],
+      "module": "MyKotlinService-1.0",
+      "useProjectSettings": false,
+      "additionalVisibleModuleNames": [],
+      "isTestModule": true,
+      "externalProjectId": ":MyKotlinService-1.0:unspecified",
+      "pureKotlinSourceFolders": [
+        "/home/dev/projects/my-kotlin-service/src/main/kotlin",
+        "/home/dev/projects/my-kotlin-service/src/test/kotlin"
+      ],
+      "kind": "default",
+      "compilerArguments": "J{\"jvmTarget\":\"21\"}",
+      "version": 5,
+      "configFileItems": [],
+      "implementedModuleNames": [],
+      "dependsOnModuleNames": [],
+      "productionOutputPath": null,
+      "testOutputPath": null,
+      "sourceSetNames": [],
+      "isHmppEnabled": true,
+      "additionalArguments": null,
+      "scriptTemplates": null,
+      "scriptTemplatesClasspath": null,
+      "outputDirectoryForJsLibraryFiles": null,
+      "targetPlatform": null,
+      "externalSystemRunTasks": [],
+      "flushNeeded": false
+    }
+  ]
+}

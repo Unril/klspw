@@ -1,5 +1,5 @@
 CompileFlags:
-  Add: [-std=c++23]
+  Add: [ -std=c++23 ]
   CompilationDatabase: build/dev
 
 Diagnostics:
@@ -16,10 +16,7 @@ Diagnostics:
       - readability-identifier-length
       - readability-magic-numbers
       - performance-enum-size
-      - bugprone-easily-swappable-parameters
-      - bugprone-exception-escape
-      - readability-convert-member-functions-to-static
-      - readability-make-member-function-const
+      - modernize-use-nodiscard
     FastCheckFilter: Strict
     CheckOptions:
       readability-identifier-naming.VariableCase: lower_case

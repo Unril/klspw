@@ -1,0 +1,86 @@
+{
+  "modules": [
+    {
+      "name": "MyKotlinService",
+      "type": "JAVA_MODULE",
+      "facets": [],
+      "dependencies": [
+        {
+          "type": "library",
+          "name": "kotlin-stdlib-2.0",
+          "scope": "compile",
+          "isExported": false
+        },
+        {
+          "type": "library",
+          "name": "jackson-core-2.15",
+          "scope": "compile",
+          "isExported": false
+        },
+        {
+          "type": "inheritedSdk"
+        }
+      ],
+      "contentRoots": [
+        {
+          "path": "/home/dev/projects/my-kotlin-service",
+          "excludedPatterns": [
+            "*.class"
+          ],
+          "excludedUrls": [
+            "file:///home/dev/projects/my-kotlin-service/build"
+          ],
+          "sourceRoots": [
+            {
+              "path": "/home/dev/projects/my-kotlin-service/src/main/kotlin",
+              "type": "java-source"
+            },
+            {
+              "path": "/home/dev/projects/my-kotlin-service/src/main/java",
+              "type": "java-source"
+            },
+            {
+              "path": "/home/dev/projects/my-kotlin-service/src/test/kotlin",
+              "type": "java-test"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "libraries": [
+    {
+      "name": "kotlin-stdlib-2.0",
+      "level": "project",
+      "type": "java-imported",
+      "excludedRoots": [],
+      "roots": [
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0.jar",
+          "type": "CLASSES",
+          "inclusionOptions": "root_itself"
+        },
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0-sources.jar",
+          "type": "SOURCES",
+          "inclusionOptions": "root_itself"
+        }
+      ]
+    },
+    {
+      "name": "jackson-core-2.15",
+      "level": "project",
+      "type": "java-imported",
+      "excludedRoots": [],
+      "roots": [
+        {
+          "path": "/home/dev/.gradle/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-core/2.15.3/jackson-core-2.15.3.jar",
+          "type": "CLASSES",
+          "inclusionOptions": "root_itself"
+        }
+      ]
+    }
+  ],
+  "sdks": [],
+  "kotlinSettings": []
+}

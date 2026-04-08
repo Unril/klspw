@@ -1,0 +1,23 @@
+version: 1
+workspace_file: ./workspace.json
+jvm_target: "21"
+
+build:
+  command: ["mybuild", "gradle"]
+  gradle_args: ["--quiet"]
+
+roots:
+  - kind: kotlin_gradle
+    path: ./src/proj_1
+
+  - kind: kotlin_gradle
+    path: ./src/proj_3
+
+  - kind: java_binary
+    path: ./src/proj_4
+    lib_dir: build/lib
+
+options:
+  include_tests: false
+  attach_sources: true
+  follow_symlinks: true

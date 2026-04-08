@@ -1,0 +1,654 @@
+#pragma once
+
+/// Workspace model matching the kotlin-lsp workspace.json schema.
+/// Reference: github.com/Kotlin/kotlin-lsp/.../model.kt
+///
+/// Each type owns its serialization via to_json()/from_json() methods.
+/// ADL free functions delegate to these methods for nlohmann/json integration.
+
+#include <map>
+#include <set>
+
+#include "common.hpp"
+#include "json.hpp"
+
+namespace klspw {
+
+// --- DependencyScope ---
+
+/// JSON "type" discriminator values: "compile", "test", "runtime", "provided".
+enum class DependencyScope : uint8_t { compile, test, runtime, provided };
+
+inline void to_json(json& j, DependencyScope s) {
+    switch (s) {
+    case DependencyScope::compile:
+        j = "compile";
+        break;
+    case DependencyScope::test:
+        j = "test";
+        break;
+    case DependencyScope::runtime:
+        j = "runtime";
+        break;
+    case DependencyScope::provided:
+        j = "provided";
+        break;
+    }
+}
+
+inline void from_json(const json& j, DependencyScope& s) {
+    static const map<string, DependencyScope> lookup = {
+        {"compile", DependencyScope::compile},
+        {"test", DependencyScope::test},
+        {"runtime", DependencyScope::runtime},
+        {"provided", DependencyScope::provided},
+    };
+    const auto& v = j.get<string>();
+    auto it = lookup.find(v);
+    if (it == lookup.end()) {
+        throw runtime_error(format("Unknown DependencyScope: {}", v));
+    }
+    s = it->second;
+}
+
+// --- SourceRootData ---
+
+struct SourceRootData {
+    string path;
+    string type;
+
+    json to_json() const { return {{"path", path}, {"type", type}}; }
+
+    static SourceRootData from_json(const json& j) {
+        return {.path = read<string>(j, "path"), .type = read<string>(j, "type")};
+    }
+};
+
+inline void to_json(json& j, const SourceRootData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, SourceRootData& d) {
+    d = SourceRootData::from_json(j);
+}
+
+// --- ContentRootData ---
+
+struct ContentRootData {
+    string path;
+    strings excludedPatterns;
+    strings excludedUrls;
+    vector<SourceRootData> sourceRoots;
+
+    json to_json() const {
+        json j = json::object();
+        write_field(j, "path", path);
+        write_field(j, "sourceRoots", sourceRoots);
+        write_opt(j, "excludedPatterns", excludedPatterns);
+        write_opt(j, "excludedUrls", excludedUrls);
+        return j;
+    }
+
+    static ContentRootData from_json(const json& j) {
+        return {
+            .path = read<string>(j, "path"),
+            .excludedPatterns = read_or<strings>(j, "excludedPatterns", {}),
+            .excludedUrls = read_or<strings>(j, "excludedUrls", {}),
+            .sourceRoots = read_or<vector<SourceRootData>>(j, "sourceRoots", {}),
+        };
+    }
+};
+
+inline void to_json(json& j, const ContentRootData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, ContentRootData& d) {
+    d = ContentRootData::from_json(j);
+}
+
+// --- Dependency variant types ---
+
+struct ModuleDep {
+    string name;
+    DependencyScope scope = DependencyScope::compile;
+    bool isExported = false;
+    bool isTestJar = false;
+
+    json to_json() const {
+        json j = {{"type", "module"}, {"name", name}, {"scope", scope}};
+        write_true(j, "isExported", isExported);
+        write_true(j, "isTestJar", isTestJar);
+        return j;
+    }
+
+    static ModuleDep from_json(const json& j) {
+        return {
+            .name = read<string>(j, "name"),
+            .scope = read<DependencyScope>(j, "scope"),
+            .isExported = read_or(j, "isExported", false),
+            .isTestJar = read_or(j, "isTestJar", false),
+        };
+    }
+};
+
+struct LibraryDep {
+    string name;
+    DependencyScope scope = DependencyScope::compile;
+    bool isExported = false;
+
+    json to_json() const {
+        json j = {{"type", "library"}, {"name", name}, {"scope", scope}};
+        write_true(j, "isExported", isExported);
+        return j;
+    }
+
+    static LibraryDep from_json(const json& j) {
+        return {
+            .name = read<string>(j, "name"),
+            .scope = read<DependencyScope>(j, "scope"),
+            .isExported = read_or(j, "isExported", false),
+        };
+    }
+};
+
+struct SdkDep {
+    string name;
+    string kind;
+
+    json to_json() const { return {{"type", "sdk"}, {"name", name}, {"kind", kind}}; }
+
+    static SdkDep from_json(const json& j) {
+        return {.name = read<string>(j, "name"), .kind = read<string>(j, "kind")};
+    }
+};
+
+struct InheritedSdk {
+    static json to_json()  { return {{"type", "inheritedSdk"}}; }
+};
+
+struct ModuleSource {
+    static json to_json()  { return {{"type", "moduleSource"}}; }
+};
+
+/// Sealed dependency sum type, discriminated by "type" field in JSON.
+/// Mirrors kotlin-lsp's DependencyData sealed class with @SerialName annotations.
+using DependencyData = variant<ModuleDep, LibraryDep, SdkDep, InheritedSdk, ModuleSource>;
+
+inline void to_json(json& j, const DependencyData& d) {
+    visit([&j](const auto& dep) { j = dep.to_json(); }, d);
+}
+
+inline void from_json(const json& j, DependencyData& d) {
+    const auto& t = read<string>(j, "type");
+    if (t == "module") {
+        d = ModuleDep::from_json(j);
+    } else if (t == "library") {
+        d = LibraryDep::from_json(j);
+    } else if (t == "sdk") {
+        d = SdkDep::from_json(j);
+    } else if (t == "inheritedSdk") {
+        d = InheritedSdk{};
+    } else if (t == "moduleSource") {
+        d = ModuleSource{};
+    } else {
+        throw runtime_error(format("Unknown dependency type: {}", t));
+    }
+}
+
+// --- XmlElement ---
+
+/// Recursive XML structure used by FacetData.configuration and LibraryData.properties.
+/// Rarely populated in practice; preserved for lossless round-trip.
+struct XmlElement {
+    string tag;
+    map<string, string> attributes;
+    vector<XmlElement> children;
+    opt_string text;
+
+    json to_json() const {
+        json j = json::object();
+        if (!tag.empty()) {
+            j["tag"] = tag;
+        }
+        if (!attributes.empty()) {
+            j["attributes"] = attributes;
+        }
+        if (!children.empty()) {
+            auto arr = json::array();
+            for (const auto& c : children) {
+                arr.push_back(c.to_json());
+            }
+            j["children"] = std::move(arr);
+        }
+        if (text) {
+            j["text"] = *text;
+        }
+        return j;
+    }
+
+    static XmlElement from_json(const json& j) {
+        XmlElement e;
+        e.tag = read_or<string>(j, "tag", "");
+        e.attributes = read_or<map<string, string>>(j, "attributes", {});
+        e.children = read_or<vector<XmlElement>>(j, "children", {});
+        e.text = read_opt<string>(j, "text");
+        return e;
+    }
+};
+
+inline void to_json(json& j, const XmlElement& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, XmlElement& d) {
+    d = XmlElement::from_json(j);
+}
+
+// --- FacetData ---
+
+struct FacetData {
+    string name;
+    string type;
+    optional<XmlElement> configuration;
+
+    json to_json() const {
+        json j = {{"name", name}, {"type", type}};
+        if (configuration) {
+            j["configuration"] = configuration->to_json();
+        }
+        return j;
+    }
+
+    static FacetData from_json(const json& j) {
+        FacetData d;
+        d.name = read<string>(j, "name");
+        d.type = read<string>(j, "type");
+        d.configuration = read_opt<XmlElement>(j, "configuration");
+        return d;
+    }
+};
+
+inline void to_json(json& j, const FacetData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, FacetData& d) {
+    d = FacetData::from_json(j);
+}
+
+// --- ModuleData ---
+
+struct ModuleData {
+    string name;
+    opt_string type; ///< null in root-workspace files, "JAVA_MODULE" in proj-workspace files.
+    vector<DependencyData> dependencies;
+    vector<ContentRootData> contentRoots;
+    vector<FacetData> facets; ///< Always empty in observed workspaces; preserved for round-trip.
+
+    json to_json() const {
+        json j = json::object();
+        write_field(j, "name", name);
+        write_opt(j, "type", type);
+        write_opt(j, "dependencies", dependencies);
+        write_opt(j, "contentRoots", contentRoots);
+        write_opt(j, "facets", facets);
+        return j;
+    }
+
+    static ModuleData from_json(const json& j) {
+        ModuleData d;
+        d.name = read<string>(j, "name");
+        d.type = read_opt<string>(j, "type");
+        d.dependencies = read_or<vector<DependencyData>>(j, "dependencies", {});
+        d.contentRoots = read_or<vector<ContentRootData>>(j, "contentRoots", {});
+        d.facets = read_or<vector<FacetData>>(j, "facets", {});
+        return d;
+    }
+};
+
+inline void to_json(json& j, const ModuleData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, ModuleData& d) {
+    d = ModuleData::from_json(j);
+}
+
+// --- LibraryRootData ---
+
+struct LibraryRootData {
+    string path;
+    opt_string type;             ///< null = CLASSES (implicit default), "SOURCES", "JAVADOC".
+    opt_string inclusionOptions; ///< "root_itself", "archives_under_root", "archives_under_root_recursively".
+
+    json to_json() const {
+        json j = {{"path", path}};
+        write_opt(j, "type", type);
+        write_opt(j, "inclusionOptions", inclusionOptions);
+        return j;
+    }
+
+    static LibraryRootData from_json(const json& j) {
+        LibraryRootData d;
+        d.path = read<string>(j, "path");
+        d.type = read_opt<string>(j, "type");
+        d.inclusionOptions = read_opt<string>(j, "inclusionOptions");
+        return d;
+    }
+};
+
+inline void to_json(json& j, const LibraryRootData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, LibraryRootData& d) {
+    d = LibraryRootData::from_json(j);
+}
+
+// --- LibraryData ---
+
+struct LibraryData {
+    string name;
+    opt_string level; ///< "project" in proj-workspace files; absent in root-workspace files.
+    opt_string module;
+    opt_string type; ///< Always written as explicit null when absent (kotlin-lsp expects the key).
+    vector<LibraryRootData> roots;
+    strings excludedRoots;
+    optional<XmlElement> properties;
+
+    json to_json() const {
+        json j = json::object();
+        write_field(j, "name", name);
+        write_opt(j, "level", level);
+        write_opt(j, "module", module);
+        write_nullable(j, "type", type);
+        write_field(j, "roots", roots);
+        write_opt(j, "excludedRoots", excludedRoots);
+        if (properties) {
+            j["properties"] = properties->to_json();
+        }
+        return j;
+    }
+
+    static LibraryData from_json(const json& j) {
+        LibraryData d;
+        d.name = read<string>(j, "name");
+        d.level = read_opt<string>(j, "level");
+        d.module = read_opt<string>(j, "module");
+        d.type = read_opt<string>(j, "type");
+        d.roots = read<vector<LibraryRootData>>(j, "roots");
+        d.excludedRoots = read_or<strings>(j, "excludedRoots", {});
+        d.properties = read_opt<XmlElement>(j, "properties");
+        return d;
+    }
+};
+
+inline void to_json(json& j, const LibraryData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, LibraryData& d) {
+    d = LibraryData::from_json(j);
+}
+
+// --- SdkRootData ---
+
+struct SdkRootData {
+    string url;
+    string type;
+
+    json to_json() const { return {{"url", url}, {"type", type}}; }
+
+    static SdkRootData from_json(const json& j) {
+        return {.url = read<string>(j, "url"), .type = read<string>(j, "type")};
+    }
+};
+
+inline void to_json(json& j, const SdkRootData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, SdkRootData& d) {
+    d = SdkRootData::from_json(j);
+}
+
+// --- SdkData ---
+
+struct SdkData {
+    string name;
+    string type;
+    opt_string version;
+    opt_string homePath;
+    optional<vector<SdkRootData>> roots; ///< Omitted when kotlin-lsp can calculate from homePath.
+    string additionalData;
+
+    json to_json() const {
+        json j = json::object();
+        write_field(j, "name", name);
+        write_field(j, "type", type);
+        write_nullable(j, "version", version);
+        write_nullable(j, "homePath", homePath);
+        write_opt(j, "roots", roots);
+        write_field(j, "additionalData", additionalData);
+        return j;
+    }
+
+    static SdkData from_json(const json& j) {
+        SdkData d;
+        d.name = read<string>(j, "name");
+        d.type = read<string>(j, "type");
+        d.version = read_opt<string>(j, "version");
+        d.homePath = read_opt<string>(j, "homePath");
+        d.roots = read_opt<vector<SdkRootData>>(j, "roots");
+        d.additionalData = read_or<string>(j, "additionalData", "");
+        return d;
+    }
+};
+
+inline void to_json(json& j, const SdkData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, SdkData& d) {
+    d = SdkData::from_json(j);
+}
+
+// --- ConfigFileItemData ---
+
+struct ConfigFileItemData {
+    string id;
+    string url;
+
+    json to_json() const { return {{"id", id}, {"url", url}}; }
+
+    static ConfigFileItemData from_json(const json& j) {
+        return {.id = read<string>(j, "id"), .url = read<string>(j, "url")};
+    }
+};
+
+inline void to_json(json& j, const ConfigFileItemData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, ConfigFileItemData& d) {
+    d = ConfigFileItemData::from_json(j);
+}
+
+// --- KotlinSettingsData ---
+
+/// Mirrors KotlinSettingsData from kotlin-lsp model.kt (~25 fields).
+/// Field count is inherent to the upstream schema; not a design smell.
+struct KotlinSettingsData {
+    string name;
+    strings sourceRoots;
+    vector<ConfigFileItemData> configFileItems;
+    string module;
+
+    bool useProjectSettings = false;
+    strings implementedModuleNames;
+    strings dependsOnModuleNames;
+    set<string> additionalVisibleModuleNames;
+    opt_string productionOutputPath;
+    opt_string testOutputPath;
+    strings sourceSetNames;
+    bool isTestModule = false;
+    string externalProjectId;
+    bool isHmppEnabled = true;
+
+    strings pureKotlinSourceFolders;
+    string kind = "default"; ///< "default", "source_set_holder", "compilation_and_source_set_holder".
+
+    opt_string compilerArguments; ///< Format: J{"jvmTarget":"21"} (JSON-in-string, prefixed with 'J').
+    opt_string additionalArguments;
+    opt_string scriptTemplates;
+    opt_string scriptTemplatesClasspath;
+    bool copyJsLibraryFiles = false;
+    opt_string outputDirectoryForJsLibraryFiles;
+
+    opt_string targetPlatform;
+    strings externalSystemRunTasks;
+    int version = 5;
+    bool flushNeeded = false;
+
+    json to_json() const {
+        json j = json::object();
+        write_field(j, "name", name);
+        write_field(j, "sourceRoots", sourceRoots);
+        write_field(j, "configFileItems", configFileItems);
+        write_field(j, "module", module);
+        write_field(j, "useProjectSettings", useProjectSettings);
+        write_field(j, "implementedModuleNames", implementedModuleNames);
+        write_field(j, "dependsOnModuleNames", dependsOnModuleNames);
+        write_field(j, "additionalVisibleModuleNames", additionalVisibleModuleNames);
+        write_nullable(j, "productionOutputPath", productionOutputPath);
+        write_nullable(j, "testOutputPath", testOutputPath);
+        write_field(j, "sourceSetNames", sourceSetNames);
+        write_field(j, "isTestModule", isTestModule);
+        write_field(j, "externalProjectId", externalProjectId);
+        write_field(j, "isHmppEnabled", isHmppEnabled);
+        write_field(j, "pureKotlinSourceFolders", pureKotlinSourceFolders);
+        write_field(j, "kind", kind);
+        write_nullable(j, "compilerArguments", compilerArguments);
+        write_field(j, "version", version);
+        write_nullable(j, "additionalArguments", additionalArguments);
+        write_nullable(j, "scriptTemplates", scriptTemplates);
+        write_nullable(j, "scriptTemplatesClasspath", scriptTemplatesClasspath);
+        write_true(j, "copyJsLibraryFiles", copyJsLibraryFiles);
+        write_nullable(j, "outputDirectoryForJsLibraryFiles", outputDirectoryForJsLibraryFiles);
+        write_nullable(j, "targetPlatform", targetPlatform);
+        write_field(j, "externalSystemRunTasks", externalSystemRunTasks);
+        write_field(j, "flushNeeded", flushNeeded);
+        return j;
+    }
+
+    static KotlinSettingsData from_json(const json& j) {
+        KotlinSettingsData d;
+        d.name = read<string>(j, "name");
+        d.sourceRoots = read<strings>(j, "sourceRoots");
+        d.configFileItems = read_or<vector<ConfigFileItemData>>(j, "configFileItems", {});
+        d.module = read<string>(j, "module");
+        d.useProjectSettings = read_or(j, "useProjectSettings", false);
+        d.implementedModuleNames = read_or<strings>(j, "implementedModuleNames", {});
+        d.dependsOnModuleNames = read_or<strings>(j, "dependsOnModuleNames", {});
+        d.additionalVisibleModuleNames = read_or<set<string>>(j, "additionalVisibleModuleNames", {});
+        d.productionOutputPath = read_opt<string>(j, "productionOutputPath");
+        d.testOutputPath = read_opt<string>(j, "testOutputPath");
+        d.sourceSetNames = read_or<strings>(j, "sourceSetNames", {});
+        d.isTestModule = read_or(j, "isTestModule", false);
+        d.externalProjectId = read_or<string>(j, "externalProjectId", "");
+        d.isHmppEnabled = read_or(j, "isHmppEnabled", true);
+        d.pureKotlinSourceFolders = read_or<strings>(j, "pureKotlinSourceFolders", {});
+        d.kind = read_or<string>(j, "kind", "default");
+        d.compilerArguments = read_opt<string>(j, "compilerArguments");
+        d.version = read_or(j, "version", 5);
+        d.additionalArguments = read_opt<string>(j, "additionalArguments");
+        d.scriptTemplates = read_opt<string>(j, "scriptTemplates");
+        d.scriptTemplatesClasspath = read_opt<string>(j, "scriptTemplatesClasspath");
+        d.copyJsLibraryFiles = read_or(j, "copyJsLibraryFiles", false);
+        d.outputDirectoryForJsLibraryFiles = read_opt<string>(j, "outputDirectoryForJsLibraryFiles");
+        d.targetPlatform = read_opt<string>(j, "targetPlatform");
+        d.externalSystemRunTasks = read_or<strings>(j, "externalSystemRunTasks", {});
+        d.flushNeeded = read_or(j, "flushNeeded", false);
+        return d;
+    }
+};
+
+inline void to_json(json& j, const KotlinSettingsData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, KotlinSettingsData& d) {
+    d = KotlinSettingsData::from_json(j);
+}
+
+// --- JavaSettingsData ---
+
+struct JavaSettingsData {
+    string module;
+    bool inheritedCompilerOutput = true;
+    bool excludeOutput = true;
+    opt_string compilerOutput;
+    opt_string compilerOutputForTests;
+    opt_string languageLevelId;
+    map<string, string> manifestAttributes;
+
+    json to_json() const {
+        json j = json::object();
+        write_field(j, "module", module);
+        write_field(j, "inheritedCompilerOutput", inheritedCompilerOutput);
+        write_field(j, "excludeOutput", excludeOutput);
+        write_nullable(j, "compilerOutput", compilerOutput);
+        write_nullable(j, "compilerOutputForTests", compilerOutputForTests);
+        write_nullable(j, "languageLevelId", languageLevelId);
+        write_field(j, "manifestAttributes", manifestAttributes);
+        return j;
+    }
+
+    static JavaSettingsData from_json(const json& j) {
+        JavaSettingsData d;
+        d.module = read<string>(j, "module");
+        d.inheritedCompilerOutput = read_or(j, "inheritedCompilerOutput", true);
+        d.excludeOutput = read_or(j, "excludeOutput", true);
+        d.compilerOutput = read_opt<string>(j, "compilerOutput");
+        d.compilerOutputForTests = read_opt<string>(j, "compilerOutputForTests");
+        d.languageLevelId = read_opt<string>(j, "languageLevelId");
+        d.manifestAttributes = read_or<map<string, string>>(j, "manifestAttributes", {});
+        return d;
+    }
+};
+
+inline void to_json(json& j, const JavaSettingsData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, JavaSettingsData& d) {
+    d = JavaSettingsData::from_json(j);
+}
+
+// --- WorkspaceData ---
+
+struct WorkspaceData {
+    vector<ModuleData> modules;
+    vector<LibraryData> libraries;
+    vector<SdkData> sdks;
+    vector<KotlinSettingsData> kotlinSettings;
+    vector<JavaSettingsData> javaSettings;
+
+    json to_json() const {
+        json j = json::object();
+        write_field(j, "modules", modules);
+        write_field(j, "libraries", libraries);
+        write_opt(j, "sdks", sdks);
+        write_opt(j, "kotlinSettings", kotlinSettings);
+        write_opt(j, "javaSettings", javaSettings);
+        return j;
+    }
+
+    static WorkspaceData from_json(const json& j) {
+        return {
+            .modules = read_or<vector<ModuleData>>(j, "modules", {}),
+            .libraries = read_or<vector<LibraryData>>(j, "libraries", {}),
+            .sdks = read_or<vector<SdkData>>(j, "sdks", {}),
+            .kotlinSettings = read_or<vector<KotlinSettingsData>>(j, "kotlinSettings", {}),
+            .javaSettings = read_or<vector<JavaSettingsData>>(j, "javaSettings", {}),
+        };
+    }
+};
+
+inline void to_json(json& j, const WorkspaceData& d) {
+    j = d.to_json();
+}
+inline void from_json(const json& j, WorkspaceData& d) {
+    d = WorkspaceData::from_json(j);
+}
+
+} // namespace klspw
