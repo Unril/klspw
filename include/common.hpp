@@ -66,4 +66,4 @@ inline string join(std::initializer_list<string_view> parts, string_view sep = "
     return join<>(parts, sep);
 }
 
-}
+} // namespace klspw

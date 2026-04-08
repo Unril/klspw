@@ -30,37 +30,13 @@ namespace klspw {
 /// JSON "type" discriminator values: "compile", "test", "runtime", "provided".
 enum class DependencyScope : uint8_t { compile, test, runtime, provided };
 
-inline void to_json(json& j, DependencyScope s) {
-    switch (s) {
-    case DependencyScope::compile:
-        j = "compile";
-        break;
-    case DependencyScope::test:
-        j = "test";
-        break;
-    case DependencyScope::runtime:
-        j = "runtime";
-        break;
-    case DependencyScope::provided:
-        j = "provided";
-        break;
-    }
-}
-
-inline void from_json(const json& j, DependencyScope& s) {
-    static const map<string, DependencyScope> lookup = {
-        {"compile", DependencyScope::compile},
-        {"test", DependencyScope::test},
-        {"runtime", DependencyScope::runtime},
-        {"provided", DependencyScope::provided},
-    };
-    const auto& v = j.get<string>();
-    auto it = lookup.find(v);
-    if (it == lookup.end()) {
-        throw runtime_error(format("Unknown DependencyScope: {}", v));
-    }
-    s = it->second;
-}
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+NLOHMANN_JSON_SERIALIZE_ENUM(DependencyScope, {
+    {DependencyScope::compile, "compile"},
+    {DependencyScope::test, "test"},
+    {DependencyScope::runtime, "runtime"},
+    {DependencyScope::provided, "provided"},
+})
 
 // --- SourceRootData ---
 
@@ -79,13 +55,6 @@ struct SourceRootData {
         return {.path = read<string>(j, "path"), .type = read<string>(j, "type")};
     }
 };
-
-inline void to_json(json& j, const SourceRootData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, SourceRootData& d) {
-    d = SourceRootData::from_json(j);
-}
 
 // --- ContentRootData ---
 
@@ -118,13 +87,6 @@ struct ContentRootData {
         };
     }
 };
-
-inline void to_json(json& j, const ContentRootData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, ContentRootData& d) {
-    d = ContentRootData::from_json(j);
-}
 
 // --- Dependency variant types ---
 
@@ -192,10 +154,12 @@ struct SdkDep {
 
 struct InheritedSdk {
     static json to_json() { return {{"type", "inheritedSdk"}}; }
+    static InheritedSdk from_json(const json& /*j*/) { return {}; }
 };
 
 struct ModuleSource {
     static json to_json() { return {{"type", "moduleSource"}}; }
+    static ModuleSource from_json(const json& /*j*/) { return {}; }
 };
 
 /// Sealed dependency sum type, discriminated by "type" field in JSON.
@@ -216,9 +180,9 @@ inline void from_json(const json& j, DependencyData& d) {
     } else if (t == "sdk") {
         d = SdkDep::from_json(j);
     } else if (t == "inheritedSdk") {
-        d = InheritedSdk{};
+        d = InheritedSdk::from_json(j);
     } else if (t == "moduleSource") {
-        d = ModuleSource{};
+        d = ModuleSource::from_json(j);
     } else {
         throw runtime_error(format("Unknown dependency type: {}", t));
     }
@@ -265,13 +229,6 @@ struct XmlElement {
     }
 };
 
-inline void to_json(json& j, const XmlElement& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, XmlElement& d) {
-    d = XmlElement::from_json(j);
-}
-
 // --- FacetData ---
 
 struct FacetData {
@@ -295,13 +252,6 @@ struct FacetData {
         return d;
     }
 };
-
-inline void to_json(json& j, const FacetData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, FacetData& d) {
-    d = FacetData::from_json(j);
-}
 
 // --- ModuleData ---
 
@@ -339,13 +289,6 @@ struct ModuleData {
     }
 };
 
-inline void to_json(json& j, const ModuleData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, ModuleData& d) {
-    d = ModuleData::from_json(j);
-}
-
 // --- LibraryRootData ---
 
 /// A single JAR or directory within a library's classpath.
@@ -373,13 +316,6 @@ struct LibraryRootData {
         return d;
     }
 };
-
-inline void to_json(json& j, const LibraryRootData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, LibraryRootData& d) {
-    d = LibraryRootData::from_json(j);
-}
 
 // --- LibraryData ---
 
@@ -425,13 +361,6 @@ struct LibraryData {
     }
 };
 
-inline void to_json(json& j, const LibraryData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, LibraryData& d) {
-    d = LibraryData::from_json(j);
-}
-
 // --- SdkRootData ---
 
 struct SdkRootData {
@@ -444,13 +373,6 @@ struct SdkRootData {
         return {.url = read<string>(j, "url"), .type = read<string>(j, "type")};
     }
 };
-
-inline void to_json(json& j, const SdkRootData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, SdkRootData& d) {
-    d = SdkRootData::from_json(j);
-}
 
 // --- SdkData ---
 
@@ -490,13 +412,6 @@ struct SdkData {
     }
 };
 
-inline void to_json(json& j, const SdkData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, SdkData& d) {
-    d = SdkData::from_json(j);
-}
-
 // --- ConfigFileItemData ---
 
 struct ConfigFileItemData {
@@ -509,13 +424,6 @@ struct ConfigFileItemData {
         return {.id = read<string>(j, "id"), .url = read<string>(j, "url")};
     }
 };
-
-inline void to_json(json& j, const ConfigFileItemData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, ConfigFileItemData& d) {
-    d = ConfigFileItemData::from_json(j);
-}
 
 // --- KotlinSettingsData ---
 
@@ -620,13 +528,6 @@ struct KotlinSettingsData {
     }
 };
 
-inline void to_json(json& j, const KotlinSettingsData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, KotlinSettingsData& d) {
-    d = KotlinSettingsData::from_json(j);
-}
-
 // --- JavaSettingsData ---
 
 /// Java compiler and output settings per module.
@@ -667,13 +568,6 @@ struct JavaSettingsData {
     }
 };
 
-inline void to_json(json& j, const JavaSettingsData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, JavaSettingsData& d) {
-    d = JavaSettingsData::from_json(j);
-}
-
 // --- WorkspaceData ---
 
 /// Root container for the entire workspace.json.
@@ -709,11 +603,4 @@ struct WorkspaceData {
     }
 };
 
-inline void to_json(json& j, const WorkspaceData& d) {
-    j = d.to_json();
-}
-inline void from_json(const json& j, WorkspaceData& d) {
-    d = WorkspaceData::from_json(j);
-}
-
-}
+} // namespace klspw

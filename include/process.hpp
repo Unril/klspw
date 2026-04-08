@@ -55,4 +55,4 @@ class ProcessRunner {
     strings args_;
 };
 
-}
+} // namespace klspw

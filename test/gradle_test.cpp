@@ -232,7 +232,10 @@ struct TempDir {
         fs::create_directories(path);
     }
 
-    ~TempDir() { std::error_code ec; fs::remove_all(path, ec); }
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
     TempDir(const TempDir&) = delete;
     TempDir& operator=(const TempDir&) = delete;
     TempDir(TempDir&&) = delete;

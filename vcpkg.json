@@ -1,7 +1,7 @@
 {
   "name": "klspw",
   "version": "0.1.0",
-  "dependencies": ["cli11", "yaml-cpp", "nlohmann-json", "doctest", "reproc", "spdlog"],
+  "dependencies": ["cli11", "yaml-cpp", "nlohmann-json", "doctest", "reproc", "spdlog", "glaze"],
   "vcpkg-configuration": {
     "default-registry": {
       "kind": "git",

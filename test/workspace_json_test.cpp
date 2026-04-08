@@ -253,9 +253,10 @@ TEST_CASE("unknown dependency type throws") {
     CHECK_THROWS_AS(j.get<klspw::DependencyData>(), std::runtime_error);
 }
 
-TEST_CASE("unknown DependencyScope throws") {
+TEST_CASE("unknown DependencyScope defaults to first entry") {
     const json j = "bogus";
-    CHECK_THROWS_AS(j.get<klspw::DependencyScope>(), std::runtime_error);
+    // NLOHMANN_JSON_SERIALIZE_ENUM returns the first mapping entry for unknown values
+    CHECK(j.get<klspw::DependencyScope>() == klspw::DependencyScope::compile);
 }
 
 TEST_CASE("XmlElement round-trips") {

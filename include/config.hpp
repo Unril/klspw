@@ -4,7 +4,7 @@
 /// Owns YAML loading, path normalization (relative to config file dir),
 /// and Gradle argument assembly.
 
-#include "common.hpp" // IWYU pragma: keep
+#include "common.hpp"
 #include "yaml.hpp"
 
 namespace klspw {
@@ -37,14 +37,10 @@ class BuildConfig {
     strings gradle_args_for(const fs::path& root, const fs::path& init_script) const {
         strings args;
         args.reserve(command_.size() + gradle_args_.size() + 4);
-        for (const auto& part : command_) {
-            args.push_back(part);
-        }
+        args.append_range(command_);
         args.emplace_back("--init-script");
         args.push_back(init_script.string());
-        for (const auto& arg : gradle_args_) {
-            args.push_back(arg);
-        }
+        args.append_range(gradle_args_);
         args.emplace_back("-p");
         args.push_back(root.string());
         args.emplace_back("dumpKotlinLspModel");
@@ -59,9 +55,9 @@ class BuildConfig {
 
 /// Boolean flags controlling workspace generation behavior.
 struct Options {
-    bool include_tests = false;   ///< Include test source sets in modules.
-    bool attach_sources = true;   ///< Discover and attach source jars to libraries.
-    bool follow_symlinks = true;  ///< Follow symlinks during source discovery.
+    bool include_tests = false;  ///< Include test source sets in modules.
+    bool attach_sources = true;  ///< Discover and attach source jars to libraries.
+    bool follow_symlinks = true; ///< Follow symlinks during source discovery.
 };
 
 /// A project root to process. Paths are absolute (normalized against config dir).
@@ -91,7 +87,7 @@ class Config {
             throw runtime_error(format("Config file not found: {}", config_path.string()));
         }
         const auto node = YAML::LoadFile(config_path.string());
-        const auto config_dir = fs::absolute(config_path).parent_path();
+        const auto config_dir = fs::weakly_canonical(config_path).parent_path();
         return Config{node, config_dir};
     }
 
@@ -104,9 +100,7 @@ class Config {
 
     /// Format compilerArguments for kotlin-lsp KotlinSettingsData.
     /// Returns J{"jvmTarget":"<target>"} -- JSON-in-string prefixed with 'J'.
-    string compiler_arguments_json() const {
-        return format(R"(J{{"jvmTarget":"{}"}})", jvm_target_);
-    }
+    string compiler_arguments_json() const { return format(R"(J{{"jvmTarget":"{}"}})", jvm_target_); }
 
   private:
     explicit Config(const YAML::Node& node, const fs::path& config_dir) {
@@ -127,6 +121,9 @@ class Config {
         }
 
         const auto& roots_node = read<YAML::Node>(node, "roots");
+        if (!roots_node.IsSequence()) {
+            throw runtime_error("Config field 'roots' must be a sequence");
+        }
         for (const auto& root_node : roots_node) {
             roots_.push_back(parse_root_entry(root_node, config_dir));
         }
@@ -153,4 +150,4 @@ class Config {
     Options options_;
 };
 
-}
+} // namespace klspw

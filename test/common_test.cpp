@@ -183,10 +183,7 @@ TEST_CASE("read returns present value") {
 
 TEST_CASE("read throws on missing key") {
     const json j = json::object();
-    CHECK_THROWS_WITH_AS(
-        (void)read<string>(j, "missing"),
-        "Missing required JSON field: missing",
-        std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)read<string>(j, "missing"), "Missing required JSON field: missing", std::runtime_error);
 }
 
 TEST_CASE("read works with vector type") {
@@ -251,17 +248,13 @@ TEST_CASE("read_all reads int array") {
 
 TEST_CASE("read_all throws on missing key") {
     const json j = json::object();
-    CHECK_THROWS_WITH_AS(
-        (void)read_all<string>(j, "missing"),
-        "Missing required JSON field: missing",
-        std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)read_all<string>(j, "missing"), "Missing required JSON field: missing",
+                         std::runtime_error);
 }
 
 TEST_CASE("read_all with transform") {
     const json j = {{"paths", {"/a", "/b"}}};
-    auto paths = read_all<fs::path>(j, "paths", [](const json& e) {
-        return fs::path{e.get<string>()};
-    });
+    auto paths = read_all<fs::path>(j, "paths", [](const json& e) { return fs::path{e.get<string>()}; });
     REQUIRE(paths.size() == 2);
     CHECK(paths[0] == fs::path{"/a"});
 }
@@ -286,10 +279,7 @@ TEST_CASE("yaml read returns int") {
 
 TEST_CASE("yaml read throws on missing key") {
     auto node = YAML::Load("other: 1");
-    CHECK_THROWS_WITH_AS(
-        (void)read<string>(node, "name"),
-        "Config missing required field: name",
-        std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)read<string>(node, "name"), "Config missing required field: name", std::runtime_error);
 }
 
 TEST_CASE("yaml read_or returns present value") {

@@ -60,4 +60,4 @@ class GradleRunner {
     }
 };
 
-}
+} // namespace klspw

@@ -10,9 +10,9 @@
 /// GradleProject → ModuleData + KotlinSettingsData
 /// GradleBuildOutput → WorkspaceData
 
-#include <algorithm> // IWYU pragma: keep
+#include <algorithm>
 
-#include "common.hpp" // IWYU pragma: keep
+#include "common.hpp"
 #include "json.hpp"
 #include "workspace_model.hpp"
 
@@ -56,15 +56,7 @@ class SourceSet {
 
         vector<SourceRootData> roots;
         for (const auto& sr : source_roots_) {
-            // Skip resource dirs that also appear in source_roots
-            bool is_resource = false;
-            for (const auto& rr : resources_roots_) {
-                if (sr == rr) {
-                    is_resource = true;
-                    break;
-                }
-            }
-            if (!is_resource) {
+            if (!std::ranges::contains(resources_roots_, sr)) {
                 roots.push_back({.path = sr.string(), .type = src_type});
             }
         }
@@ -159,19 +151,18 @@ class GradleProject {
     ModuleData to_module(bool include_tests) const {
         vector<ContentRootData> content_roots;
         vector<DependencyData> deps;
-        set<string> seen_libs; // dedup library deps within a module
+        set<string> seen_libs;
+        const auto dir_str = project_dir_.string();
 
         for (const auto& ss : source_sets_) {
             if (!include_tests && ss.is_test()) {
                 continue;
             }
 
-            // Merge source roots into a single content root per project dir
             for (auto& sr : ss.to_source_roots()) {
-                // Find or create content root for this project dir
                 bool found = false;
                 for (auto& cr : content_roots) {
-                    if (cr.path == project_dir_.string()) {
+                    if (cr.path == dir_str) {
                         cr.sourceRoots.push_back(std::move(sr));
                         found = true;
                         break;
@@ -179,7 +170,7 @@ class GradleProject {
                 }
                 if (!found) {
                     content_roots.push_back({
-                        .path = project_dir_.string(),
+                        .path = dir_str,
                         .sourceRoots = {std::move(sr)},
                     });
                 }
@@ -237,15 +228,8 @@ class GradleProject {
                 const auto sr_str = sr.string();
                 source_roots.push_back(sr_str);
 
-                // Pure Kotlin folder: appears in source_roots but not in java_source_roots
-                bool is_java = false;
-                for (const auto& jsr : ss.java_source_roots()) {
-                    if (sr == jsr) {
-                        is_java = true;
-                        break;
-                    }
-                }
-                if (!is_java) {
+                // Pure Kotlin folder: in source_roots but not in java_source_roots
+                if (!std::ranges::contains(ss.java_source_roots(), sr)) {
                     pure_kotlin_folders.push_back(sr_str);
                 }
             }
@@ -376,4 +360,4 @@ class GradleOutputParser {
     }
 };
 
-}
+} // namespace klspw

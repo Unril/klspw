@@ -80,4 +80,18 @@ template <typename T> vector<T> read_all(const json& j, const string& key) {
 /// Converts a JSON string element to fs::path. For use with read_all.
 inline constexpr auto to_path = [](const json& e) { return fs::path{e.get<string>()}; };
 
-}
+/// Concept for types that own their JSON serialization via to_json()/from_json() methods.
+/// Enables a single pair of ADL free functions instead of per-type boilerplate.
+template <typename T>
+concept JsonSerializable = requires(const T& t, const json& j) {
+    { t.to_json() } -> std::convertible_to<json>;
+    { T::from_json(j) } -> std::convertible_to<T>;
+};
+
+/// ADL bridge: delegates to T::to_json() for any type satisfying JsonSerializable.
+template <JsonSerializable T> void to_json(json& j, const T& d) { j = d.to_json(); }
+
+/// ADL bridge: delegates to T::from_json() for any type satisfying JsonSerializable.
+template <JsonSerializable T> void from_json(const json& j, T& d) { d = T::from_json(j); }
+
+} // namespace klspw
