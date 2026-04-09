@@ -4,12 +4,14 @@ jvm_target: "21"
 
 roots:
   - path: ./src/proj_1
-    command: ["./gradlew"]
-    gradle_args: ["--quiet"]
+    build:
+      command: ["./gradlew"]
+      gradle_args: ["--quiet"]
 
   - path: ./src/proj_3
-    command: ["brazil-build", "gradle"]
-    gradle_args: ["--no-daemon", "--stacktrace"]
+    build:
+      command: ["brazil-build", "gradle"]
+      gradle_args: ["--no-daemon", "--stacktrace"]
 
 options:
   include_tests: true

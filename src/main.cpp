@@ -1,3 +1,4 @@
+#include <array>
 #include <iostream>
 #include <ranges>
 #include <set>
@@ -10,35 +11,49 @@
 
 namespace {
 
-const std::unordered_map<std::string, spdlog::level::level_enum> log_levels = {
-    {"trace", spdlog::level::trace}, {"debug", spdlog::level::debug}, {"info", spdlog::level::info},
-    {"warn", spdlog::level::warn},   {"error", spdlog::level::err},   {"off", spdlog::level::off},
+struct LogLevel {
+    std::string_view name;
+    spdlog::level::level_enum level;
+};
+
+constexpr std::array log_levels = {
+    LogLevel{.name = "trace", .level = spdlog::level::trace}, LogLevel{.name = "debug", .level = spdlog::level::debug},
+    LogLevel{.name = "info", .level = spdlog::level::info},   LogLevel{.name = "warn", .level = spdlog::level::warn},
+    LogLevel{.name = "error", .level = spdlog::level::err},   LogLevel{.name = "off", .level = spdlog::level::off},
 };
 
 std::set<std::string> log_level_names() {
-    return log_levels | std::views::keys | std::ranges::to<std::set<std::string>>();
+    return log_levels | std::views::transform(&LogLevel::name) | std::ranges::to<std::set<std::string>>();
 }
 
-void set_log_level(const std::string& level) {
-    const auto it = log_levels.find(level);
+void set_log_level(std::string_view level) {
+    const auto* it = std::ranges::find(log_levels, level, &LogLevel::name);
     klspw::require(it != log_levels.end(), "Invalid log level: {}", level);
-    spdlog::set_level(it->second);
+    spdlog::set_level(it->level);
 }
 
 } // namespace
 
 int main(int argc, char* argv[]) try {
-    CLI::App app{"klspw - Kotlin LSP workspace generator"};
-    app.require_subcommand(0, 1);
+    CLI::App app{{"klspw - Kotlin LSP workspace generator"}};
+    app.require_subcommand(1);
 
     std::string config_path;
     std::string log_level = "warn";
 
-    app.add_option("-c,--config", config_path, "Path to config YAML file")->required();
+    app.add_option("-c,--config", config_path, "Path to config YAML file");
     app.add_option("--log-level", log_level, "Log level: trace, debug, info, warn, error, off")
         ->default_val("warn")
         ->check(CLI::IsMember(log_level_names()));
 
+    // --- init subcommand ---
+    auto* init = app.add_subcommand("init", "Generate a starter config YAML for a Gradle root");
+    std::string init_root;
+    std::string init_jvm_target = "21";
+    init->add_option("root", init_root, "Path to Gradle root (directory containing build.gradle.kts)")->required();
+    init->add_option("--jvm-target", init_jvm_target, "JVM target version")->default_val("21");
+
+    // --- subcommands requiring --config ---
     auto* gen = app.add_subcommand("generate", "Generate workspace.json");
     auto* insp = app.add_subcommand("inspect", "Print discovered modules, jars, and source roots");
     auto* val = app.add_subcommand("validate", "Validate config and discovered paths");
@@ -47,6 +62,24 @@ int main(int argc, char* argv[]) try {
 
     set_log_level(log_level);
 
+    if (init->parsed()) {
+        namespace fs = std::filesystem;
+        const auto root = fs::path{init_root};
+        const auto cfg_dir =
+            config_path.empty() ? fs::current_path() : fs::weakly_canonical(fs::path{config_path}).parent_path();
+        const auto data = klspw::Config::make_starter(root, cfg_dir, init_jvm_target);
+
+        if (config_path.empty()) {
+            std::cout << data.to_yaml();
+        } else {
+            klspw::write_file(config_path, data.to_yaml());
+            spdlog::info("Wrote config to {}", config_path);
+        }
+        return 0;
+    }
+
+    // All other subcommands require --config.
+    klspw::require(!config_path.empty(), "--config is required for this subcommand");
     auto cfg = klspw::Config::from_yaml(config_path);
 
     if (val->parsed()) {
@@ -62,8 +95,6 @@ int main(int argc, char* argv[]) try {
         pipeline.write_workspace();
     } else if (insp->parsed()) {
         pipeline.log_workspace();
-    } else {
-        std::cout << app.help();
     }
 
     return 0;

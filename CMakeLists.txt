@@ -233,3 +233,21 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/config_validate_te
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/config_save_test.cpp")
+    find_package(doctest CONFIG REQUIRED)
+
+    add_executable(config_save_test test/config_save_test.cpp)
+
+    target_link_libraries(config_save_test
+        PRIVATE
+        klspw_lib
+        doctest::doctest
+        $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
+    )
+
+    add_test(NAME config_save_test COMMAND config_save_test)
+    set_tests_properties(config_save_test PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+endif()

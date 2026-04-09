@@ -13,11 +13,12 @@ TEST_CASE("parses example config file") {
     CHECK(cfg.jvm_target() == "21");
 
     SUBCASE("build section") {
-        CHECK(cfg.build().command.size() == 2);
-        CHECK(cfg.build().command[0] == "mybuild");
-        CHECK(cfg.build().command[1] == "gradle");
-        CHECK(cfg.build().gradle_args.size() == 1);
-        CHECK(cfg.build().gradle_args[0] == "--quiet");
+        REQUIRE(cfg.build().has_value());
+        CHECK(cfg.build()->command.size() == 2);
+        CHECK(cfg.build()->command[0] == "mybuild");
+        CHECK(cfg.build()->command[1] == "gradle");
+        CHECK(cfg.build()->gradle_args.size() == 1);
+        CHECK(cfg.build()->gradle_args[0] == "--quiet");
     }
 
     SUBCASE("roots") {
@@ -59,8 +60,7 @@ roots:
     CHECK(cfg.options().include_tests == true);
     CHECK(cfg.options().attach_sources == true);
     CHECK(cfg.options().follow_symlinks == true);
-    CHECK(cfg.build().command.empty());
-    CHECK(cfg.build().gradle_args.empty());
+    CHECK_FALSE(cfg.build().has_value());
 }
 
 TEST_CASE("per-root build override") {
@@ -72,21 +72,22 @@ build:
 roots:
   - path: ./src/proj_a
   - path: ./src/proj_b
-    command: ["brazil-build", "gradle"]
-    gradle_args: ["--no-daemon"]
+    build:
+      command: ["brazil-build", "gradle"]
+      gradle_args: ["--no-daemon"]
 )");
     const auto cfg = klspw::Config::from_yaml(tmp.path);
 
     REQUIRE(cfg.roots().size() == 2);
 
     SUBCASE("first root inherits global build") {
-        const auto build = cfg.build_for(cfg.roots()[0]);
+        const auto& build = cfg.build_for(cfg.roots()[0]);
         CHECK(build.command == klspw::strings{"./gradlew"});
         CHECK(build.gradle_args == klspw::strings{"--quiet"});
     }
 
     SUBCASE("second root uses per-root override") {
-        const auto build = cfg.build_for(cfg.roots()[1]);
+        const auto& build = cfg.build_for(cfg.roots()[1]);
         CHECK(build.command == klspw::strings{"brazil-build", "gradle"});
         CHECK(build.gradle_args == klspw::strings{"--no-daemon"});
     }
@@ -151,7 +152,7 @@ TEST_CASE("compiler_arguments_json formats J-prefixed JSON") {
 
 TEST_CASE("BuildConfig::args_for produces correct argument order") {
     const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const auto args = cfg.build().args_for("/tmp/proj", "/tmp/init.gradle.kts");
+    const auto args = cfg.build()->args_for("/tmp/proj", "/tmp/init.gradle.kts");
 
     REQUIRE(args.size() == 8);
     CHECK(args[0] == "mybuild");
@@ -169,7 +170,7 @@ TEST_CASE("parses per-root build config without global build") {
 
     CHECK(cfg.version() == 1);
     CHECK(cfg.jvm_target() == "21");
-    CHECK(cfg.build().empty());
+    CHECK_FALSE(cfg.build().has_value());
     CHECK(cfg.options().include_tests == true);
 
     REQUIRE(cfg.roots().size() == 2);
@@ -177,7 +178,7 @@ TEST_CASE("parses per-root build config without global build") {
     SUBCASE("first root has its own build command") {
         const auto& root = cfg.roots()[0];
         CHECK(cfg.root_path(root).filename() == "proj_1");
-        const auto build = cfg.build_for(root);
+        const auto& build = cfg.build_for(root);
         CHECK(build.command == klspw::strings{"./gradlew"});
         CHECK(build.gradle_args == klspw::strings{"--quiet"});
     }
@@ -185,7 +186,7 @@ TEST_CASE("parses per-root build config without global build") {
     SUBCASE("second root has different build command") {
         const auto& root = cfg.roots()[1];
         CHECK(cfg.root_path(root).filename() == "proj_3");
-        const auto build = cfg.build_for(root);
+        const auto& build = cfg.build_for(root);
         CHECK(build.command == klspw::strings{"brazil-build", "gradle"});
         CHECK(build.gradle_args == klspw::strings{"--no-daemon", "--stacktrace"});
     }

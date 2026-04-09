@@ -17,8 +17,9 @@
 ///   roots:
 ///     - path: ./src/my-service
 ///     - path: ./src/other-service
-///       command: ["brazil-build", "gradle"]
-///       gradle_args: ["--no-daemon"]
+///       build:
+///         command: ["brazil-build", "gradle"]
+///         gradle_args: ["--no-daemon"]
 ///   options:
 ///     include_tests: false
 
@@ -58,8 +59,7 @@ struct BuildConfig {
 /// A project root to process. Optionally overrides the global build config.
 struct RootEntry {
     string path; ///< Relative or absolute path to the Gradle root project directory.
-    strings command; ///< Per-root build command override. Empty = inherit global.
-    strings gradle_args; ///< Per-root Gradle args override. Empty = inherit global.
+    optional<BuildConfig> build; ///< Per-root build override. Absent = inherit global.
 };
 
 /// Plain YAML-deserializable config data. Never mutated after deserialization.
@@ -67,7 +67,7 @@ struct ConfigData {
     int version = 0; ///< Config schema version (must be 1).
     string workspace_file; ///< Output workspace.json path (relative to config dir). Optional.
     string jvm_target = "21"; ///< JVM target version for kotlin-lsp compilerArguments.
-    BuildConfig build; ///< Global build command and Gradle args.
+    optional<BuildConfig> build; ///< Global build command and Gradle args. Optional.
     vector<RootEntry> roots; ///< Gradle root projects to process (at least one required).
     GenerationOptions options; ///< Behavioral flags for workspace generation.
 
@@ -79,20 +79,57 @@ struct ConfigData {
             require(!root.path.empty(), "Config missing required field: path");
         }
     }
+
+    /// Serialize to YAML string.
+    string to_yaml() const {
+        constexpr glz::opts yaml_opts{.format = glz::YAML, .skip_null_members = true, .prettify = true};
+        auto yaml_str = glz::write<yaml_opts>(*this);
+        require(yaml_str.has_value(), "Failed to serialize config to YAML");
+        return std::move(yaml_str).value();
+    }
+
+    /// Deserialize from a YAML string. Validates after parsing.
+    static ConfigData from_yaml(string_view yaml_str) {
+        ConfigData data;
+        constexpr glz::opts yaml_opts{.format = glz::YAML, .error_on_unknown_keys = false};
+        const auto ec = glz::read<yaml_opts>(data, yaml_str);
+        require(!ec, "Failed to parse config YAML: {}", [&] { return glz::format_error(ec, yaml_str); });
+        data.validate();
+        return data;
+    }
 };
 
 /// Loaded and validated config. Resolves relative paths against config_dir on demand.
 class Config {
   public:
+    /// Load config from a YAML file. Validates after parsing.
     static Config from_yaml(const fs::path& config_path) {
         require(fs::exists(config_path), "Config file not found: {}", config_path);
-        const auto yaml_str = read_file(config_path);
-        ConfigData data;
-        constexpr glz::opts yaml_opts{.format = glz::YAML, .error_on_unknown_keys = false};
-        const auto ec = glz::read<yaml_opts>(data, yaml_str);
-        require(!ec, "Failed to parse config: {}", [&] { return glz::format_error(ec, yaml_str); });
-        data.validate();
+        auto data = ConfigData::from_yaml(read_file(config_path));
         return Config{std::move(data), config_path};
+    }
+
+    /// Save this config's data as YAML to a file.
+    void save(const fs::path& config_path) const { write_file(config_path, data_.to_yaml()); }
+
+    /// Serialize this config's data to a YAML string.
+    string to_yaml() const { return data_.to_yaml(); }
+
+    /// Build a starter ConfigData for a single Gradle root.
+    /// root_path is resolved relative to config_dir. Both paths are canonicalized internally.
+    static ConfigData make_starter(const fs::path& root_path, const fs::path& config_dir,
+                                   const string& jvm_target = "21") {
+        require(fs::is_directory(root_path), "root_path must be an existing directory: {}", root_path);
+        const auto abs_root = fs::weakly_canonical(root_path);
+        const auto abs_cfg = fs::weakly_canonical(config_dir);
+        const auto rel = "./" + abs_root.lexically_relative(abs_cfg).string();
+        return {
+            .version = 1,
+            .workspace_file = "./workspace.json",
+            .jvm_target = jvm_target,
+            .build = BuildConfig{.command = {"./gradlew"}},
+            .roots = {{.path = rel}},
+        };
     }
 
     const fs::path& config_file() const { return config_file_; }
@@ -101,7 +138,7 @@ class Config {
     // --- Forwarded accessors ---
     int version() const { return data_.version; }
     const string& jvm_target() const { return data_.jvm_target; }
-    const BuildConfig& build() const { return data_.build; }
+    const optional<BuildConfig>& build() const { return data_.build; }
     const vector<RootEntry>& roots() const { return data_.roots; }
     const GenerationOptions& options() const { return data_.options; }
 
@@ -117,12 +154,14 @@ class Config {
     fs::path root_path(const RootEntry& root) const { return resolve(root.path); }
 
     /// Resolve the effective build config for a root.
-    /// Uses per-root command/gradle_args if present, otherwise falls back to the global.
-    BuildConfig build_for(const RootEntry& root) const {
-        return {
-            .command = root.command.empty() ? data_.build.command : root.command,
-            .gradle_args = root.gradle_args.empty() ? data_.build.gradle_args : root.gradle_args,
-        };
+    /// Uses per-root build if present, otherwise falls back to the global build.
+    /// Throws if neither is configured.
+    const BuildConfig& build_for(const RootEntry& root) const {
+        if (root.build) {
+            return *root.build;
+        }
+        require(data_.build.has_value(), "no build command configured for root: {}", root.path);
+        return *data_.build;
     }
 
     /// Format compilerArguments for kotlin-lsp KotlinSettingsData.
@@ -154,7 +193,8 @@ class Config {
     fs::path resolve(const string& relative) const { return (config_dir_ / relative).lexically_normal(); }
 
     [[nodiscard]] bool has_any_build_command() const {
-        return !data_.build.empty() || r::any_of(data_.roots, [](const auto& entry) { return !entry.command.empty(); });
+        return data_.build.has_value() ||
+               r::any_of(data_.roots, [](const auto& entry) { return entry.build.has_value(); });
     }
 
     ConfigData data_;

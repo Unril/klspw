@@ -28,7 +28,8 @@ build:
   command: ["./gradlew"]
 roots:
   - path: {}
-)", root_dir.path.string());
+)",
+                                  root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
@@ -41,7 +42,8 @@ TEST_CASE("validate throws on missing build command") {
 version: 1
 roots:
   - path: {}
-)", root_dir.path.string());
+)",
+                                  root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
@@ -54,8 +56,10 @@ TEST_CASE("validate accepts per-root build command without global") {
 version: 1
 roots:
   - path: {}
-    command: ["./gradlew"]
-)", root_dir.path.string());
+    build:
+      command: ["./gradlew"]
+)",
+                                  root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
@@ -71,7 +75,8 @@ build:
   command: ["./gradlew"]
 roots:
   - path: {}
-)", root_dir.path.string());
+)",
+                                  root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
