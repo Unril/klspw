@@ -174,7 +174,7 @@ struct JavaSettingsData {
     bool inherited_compiler_output = true;
     bool exclude_output = true;
     opt_string compiler_output;
-    opt_string compiler_output_for_tests;           
+    opt_string compiler_output_for_tests;
     opt_string language_level_id;
     map<string, string> manifest_attributes;
 };

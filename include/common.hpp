@@ -29,7 +29,6 @@ namespace klspw {
 
 using std::format;
 using std::map;
-using std::move;
 using std::nullopt;
 using std::optional;
 using std::runtime_error;
@@ -37,10 +36,8 @@ using std::set;
 using std::size_t;
 using std::string;
 using std::string_view;
-using std::to_string;
 using std::variant;
 using std::vector;
-using std::visit;
 
 namespace r = std::ranges;
 namespace v = std::views;
@@ -139,10 +136,18 @@ inline void require(bool condition, std::format_string<detail::eval_t<Args>...> 
 /// Dedup elements by key, keeping first occurrence. Pipe adaptor: range | unique_by(proj)
 namespace detail {
 
+/// A type T is hashable if std::hash<T>{}(val) produces a std::size_t.
+template <typename T>
+concept Hashable = requires(T val) {
+    { std::hash<T>{}(val) } -> std::convertible_to<std::size_t>;
+};
+
 template <typename Proj> struct unique_by_adaptor : r::range_adaptor_closure<unique_by_adaptor<Proj>> {
     Proj proj;
 
-    template <r::input_range R> constexpr auto operator()(R&& range) const {
+    template <r::input_range R>
+        requires Hashable<std::remove_cvref_t<std::invoke_result_t<Proj, const r::range_value_t<R>&>>>
+    auto operator()(R&& range) const {
         using Val = r::range_value_t<R>;
         using Key = std::remove_cvref_t<std::invoke_result_t<Proj, const Val&>>;
         std::unordered_set<Key> seen;
@@ -167,6 +172,7 @@ auto unique_by(Proj proj = {}) {
 
 /// Returns a filter that excludes elements present in the given set.
 /// Usage: source_roots | not_in(resources_roots) | ...
+/// The returned view captures excluded by reference -- caller must ensure the set outlives the view.
 inline auto not_in(const string_set& excluded) {
     return v::filter([&excluded](const auto& val) { return !excluded.contains(val); });
 }

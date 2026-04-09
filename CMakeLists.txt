@@ -212,24 +212,24 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/process_test.cpp")
     )
 endif()
 
-if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/pipeline_test.cpp")
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/config_validate_test.cpp")
     find_package(doctest CONFIG REQUIRED)
 
-    add_executable(pipeline_test test/pipeline_test.cpp)
+    add_executable(config_validate_test test/config_validate_test.cpp)
 
-    target_link_libraries(pipeline_test
+    target_link_libraries(config_validate_test
         PRIVATE
         klspw_lib
         doctest::doctest
         $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
     )
 
-    target_compile_definitions(pipeline_test PRIVATE
+    target_compile_definitions(config_validate_test PRIVATE
         DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
     )
 
-    add_test(NAME pipeline_test COMMAND pipeline_test)
-    set_tests_properties(pipeline_test PROPERTIES
+    add_test(NAME config_validate_test COMMAND config_validate_test)
+    set_tests_properties(config_validate_test PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endif()

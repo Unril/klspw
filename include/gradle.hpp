@@ -45,7 +45,9 @@ class GradleRunner {
         init_script_path_.clear();
         std::error_code ec;
         fs::remove(path_copy, ec);
-        require(!ec, "Failed to remove init script {}: {}", path_copy, ec);
+        if (ec) {
+            spdlog::warn("Failed to remove init script {}: {}", path_copy.string(), ec.message());
+        }
     }
 
     /// Run Gradle against a root directory with the given build config. Returns captured stdout.

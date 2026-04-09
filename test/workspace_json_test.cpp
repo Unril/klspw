@@ -9,13 +9,13 @@ namespace {
 template <typename T> std::string to_json(const T& val) {
     auto result = glz::write_json(val);
     REQUIRE(result.has_value());
-    return std::move(result.value());
+    return result.value();
 }
 
 template <typename T> T from_json(const std::string& json_str) {
     auto result = glz::read_json<T>(json_str);
     REQUIRE(result.has_value());
-    return std::move(result.value());
+    return result.value();
 }
 
 void assert_round_trip(const std::string& path) {
@@ -77,7 +77,7 @@ TEST_CASE("root workspace structure") {
         CHECK(ks.version == 5);
         CHECK(ks.kind == "default");
         CHECK(ks.compiler_arguments.has_value());
-        CHECK(ks.compiler_arguments->find("jvmTarget") != std::string::npos);
+        CHECK(ks.compiler_arguments->contains("jvmTarget"));
     }
 }
 

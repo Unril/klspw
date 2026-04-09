@@ -35,9 +35,9 @@ BUILD SUCCESSFUL in 3s
 
     CHECK(json.front() == '{');
     CHECK(json.back() == '}');
-    CHECK(json.find("rootProject") != std::string::npos);
-    CHECK(json.find("KLSPW_BEGIN") == std::string::npos);
-    CHECK(json.find("KLSPW_END") == std::string::npos);
+    CHECK(json.contains("rootProject"));
+    CHECK(!json.contains("KLSPW_BEGIN"));
+    CHECK(!json.contains("KLSPW_END"));
 }
 
 TEST_CASE("extracts JSON block with minimal surrounding content") {
@@ -236,10 +236,10 @@ TEST_CASE("init script contains expected markers") {
 
     const auto content = klspw::read_file(runner.init_script_path());
 
-    CHECK(content.find("dumpKotlinLspModel") != std::string::npos);
-    CHECK(content.find("KLSPW_BEGIN") != std::string::npos);
-    CHECK(content.find("KLSPW_END") != std::string::npos);
-    CHECK(content.find("JsonOutput") != std::string::npos);
+    CHECK(content.contains("dumpKotlinLspModel"));
+    CHECK(content.contains("KLSPW_BEGIN"));
+    CHECK(content.contains("KLSPW_END"));
+    CHECK(content.contains("JsonOutput"));
 }
 
 TEST_CASE("init script is cleaned up on destruction") {
@@ -259,25 +259,6 @@ TEST_CASE("GradleRunner uses default temp dir when not specified") {
     const auto& path = runner.init_script_path();
     REQUIRE(fs::exists(path));
     CHECK(path.string().contains("klspw"));
-}
-
-// --- BuildConfig ---
-
-TEST_CASE("BuildConfig::args_for produces correct argument order") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const auto args = cfg.build().args_for("/tmp/proj", "/tmp/init.gradle.kts");
-
-    // command: [mybuild, gradle], gradle_args: [--quiet]
-    // mybuild gradle --init-script /tmp/init.gradle.kts --quiet -p /tmp/proj dumpKotlinLspModel
-    REQUIRE(args.size() == 8);
-    CHECK(args[0] == "mybuild");
-    CHECK(args[1] == "gradle");
-    CHECK(args[2] == "--init-script");
-    CHECK(args[3] == "/tmp/init.gradle.kts");
-    CHECK(args[4] == "--quiet");
-    CHECK(args[5] == "-p");
-    CHECK(args[6] == "/tmp/proj");
-    CHECK(args[7] == "dumpKotlinLspModel");
 }
 
 // --- SourceSet → workspace model conversion ---
@@ -442,7 +423,7 @@ TEST_CASE("GradleProject::to_module builds module with deps and content roots") 
         }]
     })");
 
-    const auto mod = output.projects[0].to_module(no_tests);
+    const auto mod = output.projects[0].to_module(output.projects[0].active_sets(no_tests));
 
     CHECK(mod.name == "proj");
     CHECK(mod.type == "JAVA_MODULE");
@@ -474,12 +455,13 @@ TEST_CASE("GradleProject::to_module excludes test source sets when include_tests
         }]
     })");
 
-    const auto mod_no_tests = output.projects[0].to_module(no_tests);
+    const auto& proj = output.projects[0];
+    const auto mod_no_tests = proj.to_module(proj.active_sets(no_tests));
     // Only main source root, only 1 lib dep (a.jar) + 2 sentinels
     CHECK(mod_no_tests.content_roots[0].source_roots.size() == 1);
     CHECK(mod_no_tests.dependencies.size() == 3);
 
-    const auto mod_with_tests = output.projects[0].to_module(with_tests);
+    const auto mod_with_tests = proj.to_module(proj.active_sets(with_tests));
     // main + test source roots, 2 lib deps (a.jar deduped, junit.jar) + 2 sentinels
     CHECK(mod_with_tests.content_roots[0].source_roots.size() == 2);
     CHECK(mod_with_tests.dependencies.size() == 4);
@@ -500,7 +482,7 @@ TEST_CASE("GradleProject::to_module deduplicates library deps across source sets
         }]
     })");
 
-    const auto mod = output.projects[0].to_module(with_tests);
+    const auto mod = output.projects[0].to_module(output.projects[0].active_sets(with_tests));
     // a.jar (from main, compile), b.jar (from main, compile), c.jar (from test, test) + 2 sentinels
     // a.jar appears in both but should be deduped (first occurrence wins = compile scope)
     size_t lib_dep_count = 0;
@@ -535,7 +517,8 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
         }]
     })");
 
-    const auto ks = output.projects[0].to_kotlin_settings(R"(J{"jvmTarget":"21"})", no_tests);
+    const auto& proj = output.projects[0];
+    const auto ks = proj.to_kotlin_settings(R"(J{"jvmTarget":"21"})", proj.active_sets(no_tests));
 
     CHECK(ks.name == "Kotlin");
     CHECK(ks.module == "proj");

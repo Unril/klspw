@@ -52,7 +52,7 @@ struct BuildConfig {
         return args;
     }
 
-    bool empty() const { return command.empty(); }
+    [[nodiscard]] bool empty() const { return command.empty(); }
 };
 
 /// A project root to process. Optionally overrides the global build config.
@@ -141,8 +141,7 @@ class Config {
             require(fs::is_directory(resolved), "root path does not exist: {}", resolved);
         }
 
-        require(!data_.build.empty() || !r::all_of(data_.roots, [](const auto& r) { return r.command.empty(); }),
-                "no build command configured (global or per-root)");
+        require(has_any_build_command(), "no build command configured (global or per-root)");
     }
 
   private:
@@ -153,6 +152,10 @@ class Config {
     }
 
     fs::path resolve(const string& relative) const { return (config_dir_ / relative).lexically_normal(); }
+
+    [[nodiscard]] bool has_any_build_command() const {
+        return !data_.build.empty() || r::any_of(data_.roots, [](const auto& entry) { return !entry.command.empty(); });
+    }
 
     ConfigData data_;
     fs::path config_file_;

@@ -9,6 +9,7 @@ string read_file(const fs::path& path) {
     std::error_code ec;
     const auto size = fs::file_size(path, ec);
     require(!ec && !std::cmp_equal(size, -1), "Cannot determine file size for {}: {}", path, ec);
+    require(std::in_range<size_t>(size), "File too large: {}", path);
     std::ifstream file(path, std::ios::in | std::ios::binary);
     require(file.good(), "Failed to open file: {}", path);
     string content(static_cast<size_t>(size), '\0');

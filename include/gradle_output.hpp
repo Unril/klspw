@@ -27,7 +27,7 @@ namespace klspw {
 
 /// Derive a library name from a jar path.
 /// E.g., "/cache/kotlin-stdlib-2.0.0.jar" -> "kotlin-stdlib-2.0.0".
-inline string library_name_for_jar(const string& jar) {
+inline string library_name_for_jar(string_view jar) {
     return fs::path{jar}.stem().string();
 }
 
@@ -71,11 +71,11 @@ struct SourceSet {
         return {.path = path, .type = is_test() ? "java-test-resource" : "java-resource"};
     }
 
-    static LibraryData library_from_jar(const string& jar) {
-        return {.name = library_name_for_jar(jar), .roots = {{.path = jar}}};
+    static LibraryData library_from_jar(string_view jar) {
+        return {.name = library_name_for_jar(jar), .roots = {{.path = string{jar}}}};
     }
 
-    LibraryDep library_dep_from_jar(const string& jar) const {
+    LibraryDep library_dep_from_jar(string_view jar) const {
         return {.name = library_name_for_jar(jar), .scope = dep_scope()};
     }
 
@@ -137,14 +137,13 @@ struct GradleProject {
 
     static vector<DependencyData> module_dependencies(const vector<SourceSet>& sets) {
         auto lib_deps = sets | v::transform(&SourceSet::collect_library_deps) | v::join | unique_by(&LibraryDep::name);
-        vector<DependencyData> deps(std::make_move_iterator(lib_deps.begin()), std::make_move_iterator(lib_deps.end()));
+        vector<DependencyData> deps(std::from_range, std::move(lib_deps));
         deps.emplace_back(InheritedSdk{});
         deps.emplace_back(ModuleSource{});
         return deps;
     }
 
-    ModuleData to_module(const GenerationOptions& options) const {
-        const auto sets = active_sets(options);
+    ModuleData to_module(const vector<SourceSet>& sets) const {
         return {
             .name = module_name(),
             .type = "JAVA_MODULE",
@@ -153,14 +152,8 @@ struct GradleProject {
         };
     }
 
-    vector<LibraryData> collect_libraries(const GenerationOptions& options) const {
-        return active_sets(options) | v::transform(&SourceSet::collect_libraries) | v::join |
-               unique_by(&LibraryData::name);
-    }
-
-    KotlinSettingsData to_kotlin_settings(const string& compiler_args_json, const GenerationOptions& options) const {
+    KotlinSettingsData to_kotlin_settings(const string& compiler_args_json, const vector<SourceSet>& sets) const {
         const auto mod_name = module_name();
-        const auto sets = active_sets(options);
         return {
             .name = "Kotlin",
             .source_roots = sets | v::transform(&SourceSet::source_roots) | v::join | to_vector(),
@@ -186,17 +179,27 @@ struct GradleBuildOutput {
 
     auto active_projects() const { return projects | v::filter(std::not_fn(&GradleProject::is_skipped)); }
 
-    WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
-        auto active = active_projects();
-        auto to_module = [&](const auto& p) { return p.to_module(options); };
-        auto to_settings = [&](const auto& p) { return p.to_kotlin_settings(compiler_args_json, options); };
-        auto to_libs = [&](const auto& p) { return p.collect_libraries(options); };
+    static vector<LibraryData> collect_libraries(const vector<SourceSet>& sets) {
+        return sets | v::transform(&SourceSet::collect_libraries) | v::join | unique_by(&LibraryData::name);
+    }
 
-        return {
-            .modules = active | v::transform(to_module) | to_vector(),
-            .libraries = active | v::transform(to_libs) | v::join | unique_by(&LibraryData::name),
-            .kotlin_settings = active | v::transform(to_settings) | to_vector(),
-        };
+    WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
+        auto active = active_projects() | to_vector();
+
+        // Compute active source sets once per project to avoid redundant filtering.
+        auto sets_per_project =
+            active | v::transform([&](const auto& p) { return p.active_sets(options); }) | to_vector();
+
+        WorkspaceData ws;
+        for (const auto& [proj, sets] : v::zip(active, sets_per_project)) {
+            ws.modules.push_back(proj.to_module(sets));
+            ws.kotlin_settings.push_back(proj.to_kotlin_settings(compiler_args_json, sets));
+            ws.libraries.append_range(collect_libraries(sets));
+        }
+
+        // Deduplicate libraries by name, keeping first occurrence.
+        ws.libraries = std::move(ws.libraries) | unique_by(&LibraryData::name);
+        return ws;
     }
 };
 
