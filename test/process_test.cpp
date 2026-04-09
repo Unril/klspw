@@ -20,23 +20,13 @@ TEST_CASE("throws on non-zero exit code") {
 }
 
 TEST_CASE("error message includes exit code and command") {
-    try {
-        ProcessRunner({"sh", "-c", "exit 7"}).run();
-        FAIL("Expected exception");
-    } catch (const std::runtime_error& e) {
-        const string msg = e.what();
-        CHECK(msg.contains("7"));
-        CHECK(msg.contains("sh"));
-    }
+    CHECK_THROWS_WITH_AS(ProcessRunner({"sh", "-c", "exit 7"}).run(), doctest::Contains("7"), std::runtime_error);
+    CHECK_THROWS_WITH_AS(ProcessRunner({"sh", "-c", "exit 7"}).run(), doctest::Contains("sh"), std::runtime_error);
 }
 
 TEST_CASE("error message includes stdout from failing command") {
-    try {
-        ProcessRunner({"sh", "-c", "echo oops && exit 1"}).run();
-        FAIL("Expected exception");
-    } catch (const std::runtime_error& e) {
-        CHECK(string(e.what()).contains("oops"));
-    }
+    CHECK_THROWS_WITH_AS(ProcessRunner({"sh", "-c", "echo oops && exit 1"}).run(), doctest::Contains("oops"),
+                         std::runtime_error);
 }
 
 TEST_CASE("throws on nonexistent command") {

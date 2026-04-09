@@ -359,7 +359,7 @@ TEST_CASE("SourceSet::collect_libraries builds one library per jar") {
     })");
 
     const auto& ss = output.projects[0].source_sets[0];
-    const auto libs = ss.collect_libraries();
+    const auto libs = ss.collect_libraries(false);
 
     REQUIRE(libs.size() == 2);
     CHECK(libs[0].name == "kotlin-stdlib-2.0.0");
@@ -528,6 +528,130 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
 
     REQUIRE(ks.pure_kotlin_source_folders.size() == 1);
     CHECK(ks.pure_kotlin_source_folders[0] == "/tmp/proj/src/main/kotlin");
+}
+
+TEST_CASE("SourceSet::pure_kotlin_roots excludes java and resource dirs") {
+    const auto output = klspw::parse_gradle_output(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": ["/tmp/proj/src/main/java", "/tmp/proj/src/main/kotlin", "/tmp/proj/src/main/resources"],
+                "javaSourceRoots": ["/tmp/proj/src/main/java"],
+                "resourcesRoots": ["/tmp/proj/src/main/resources"],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": [],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto& ss = output.projects[0].source_sets[0];
+    const auto pure = ss.pure_kotlin_roots();
+
+    REQUIRE(pure.size() == 1);
+    CHECK(pure[0] == "/tmp/proj/src/main/kotlin");
+}
+
+TEST_CASE("SourceSet::pure_kotlin_roots returns empty when all dirs are java or resources") {
+    const auto output = klspw::parse_gradle_output(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": ["/tmp/proj/src/main/java", "/tmp/proj/src/main/resources"],
+                "javaSourceRoots": ["/tmp/proj/src/main/java"],
+                "resourcesRoots": ["/tmp/proj/src/main/resources"],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": [],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    CHECK(output.projects[0].source_sets[0].pure_kotlin_roots().empty());
+}
+
+TEST_CASE("SourceSet::library_from_jar uses source_classpath when available") {
+    const auto output = klspw::parse_gradle_output(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": [],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": ["/cache/kotlin-stdlib-2.0.jar"],
+                "runtimeClasspath": [],
+                "sourceClasspath": {"/cache/kotlin-stdlib-2.0.jar": "/cache/kotlin-stdlib-2.0-sources.jar"},
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto& ss = output.projects[0].source_sets[0];
+    const auto libs = ss.collect_libraries(true);
+
+    REQUIRE(libs.size() == 1);
+    CHECK(libs[0].name == "kotlin-stdlib-2.0");
+    REQUIRE(libs[0].roots.size() == 2);
+    CHECK(libs[0].roots[0].path == "/cache/kotlin-stdlib-2.0.jar");
+    CHECK(libs[0].roots[0].type == "CLASSES");
+    CHECK(libs[0].roots[1].path == "/cache/kotlin-stdlib-2.0-sources.jar");
+    CHECK(libs[0].roots[1].type == "SOURCES");
+}
+
+TEST_CASE("SourceSet::library_from_jar skips sources when attach_sources=false") {
+    const auto output = klspw::parse_gradle_output(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": [],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": ["/cache/kotlin-stdlib-2.0.jar"],
+                "runtimeClasspath": [],
+                "sourceClasspath": {"/cache/kotlin-stdlib-2.0.jar": "/cache/kotlin-stdlib-2.0-sources.jar"},
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+    const auto& ss = output.projects[0].source_sets[0];
+    const auto libs = ss.collect_libraries(false);
+
+    REQUIRE(libs.size() == 1);
+    CHECK(libs[0].roots.size() == 1);
+    CHECK(libs[0].roots[0].type == "CLASSES");
 }
 
 // --- GradleBuildOutput → WorkspaceData ---

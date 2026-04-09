@@ -13,15 +13,17 @@
 
 namespace klspw {
 
-/// Log a human-readable summary of workspace contents. Defined below Pipeline.
-void log_workspace_summary(const WorkspaceData& ws);
-
 /// Orchestrates Gradle execution across config roots and produces WorkspaceData.
 class Pipeline {
   public:
     Pipeline(Config cfg, GradleBuildFn run_gradle) : cfg_{std::move(cfg)}, run_gradle_{std::move(run_gradle)} {
         require(run_gradle_ != nullptr, "Pipeline: run_gradle must not be null");
     }
+
+    /// Set where to save raw Gradle output for debugging.
+    /// If path is a directory (or ends with /), saves as {path}/{root_name}_raw.txt and {path}/{root_name}.json.
+    /// If path is a file, saves raw output there (only works well with a single root).
+    void set_gradle_output_path(string path) { gradle_output_path_ = std::move(path); }
 
     /// Run Gradle on each root and merge results into a single WorkspaceData.
     [[nodiscard]] WorkspaceData build_workspace() const {
@@ -79,6 +81,7 @@ class Pipeline {
     WorkspaceData build_root_workspace(const RootEntry& root) const {
         const auto build = cfg_.build_for(root);
         const auto root_path = cfg_.root_path(root);
+        const auto module_name = root_path.filename().string();
         spdlog::info("Processing root: {}", root_path.string());
         spdlog::debug("  build command: {}", join(build.command));
         spdlog::debug("  gradle args: {}", build.gradle_args.empty() ? "(none)" : join(build.gradle_args));
@@ -88,6 +91,10 @@ class Pipeline {
 
         const auto json_str = extract_gradle_json(raw_output);
         spdlog::debug("  extracted JSON: {} bytes", json_str.size());
+
+        if (!gradle_output_path_.empty()) {
+            save_gradle_output(module_name, raw_output, json_str);
+        }
 
         const auto build_output = parse_gradle_output(json_str);
         spdlog::info("  {} project(s), {} active", build_output.projects.size(), build_output.active_project_count());
@@ -111,8 +118,27 @@ class Pipeline {
         return ws;
     }
 
+    void save_gradle_output(const string& root_name, string_view raw_output, string_view extracted_json) const {
+        const auto p = fs::path{gradle_output_path_};
+        if (fs::is_directory(p) || p.string().ends_with("/")) {
+            // Directory mode: save both raw and extracted JSON with default names.
+            fs::create_directories(p);
+            write_file(p / format("{}_raw.txt", root_name), raw_output);
+            write_file(p / format("{}.json", root_name), extracted_json);
+            spdlog::info("  Saved gradle output to {}/{}[_raw.txt|.json]", p.string(), root_name);
+        } else {
+            // File mode: save raw output to the specified path.
+            if (const auto parent = p.parent_path(); !parent.empty()) {
+                fs::create_directories(parent);
+            }
+            write_file(p, raw_output);
+            spdlog::info("  Saved gradle output to {}", p.string());
+        }
+    }
+
     Config cfg_;
     GradleBuildFn run_gradle_;
+    string gradle_output_path_;
 };
 
 } // namespace klspw

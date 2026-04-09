@@ -180,15 +180,16 @@ TEST_CASE("write_file creates file with binary content") {
 }
 
 TEST_CASE("read_file throws on empty path") {
-    CHECK_THROWS_AS(klspw::read_file(""), std::runtime_error);
+    CHECK_THROWS_WITH_AS(klspw::read_file(""), doctest::Contains("empty path"), std::runtime_error);
 }
 
 TEST_CASE("write_file throws on empty path") {
-    CHECK_THROWS_AS(klspw::write_file("", "data"), std::runtime_error);
+    CHECK_THROWS_WITH_AS(klspw::write_file("", "data"), doctest::Contains("empty path"), std::runtime_error);
 }
 
 TEST_CASE("read_file throws on nonexistent file") {
-    CHECK_THROWS_AS(klspw::read_file("/tmp/klspw_nonexistent_file_xyz.txt"), std::runtime_error);
+    CHECK_THROWS_WITH_AS(klspw::read_file("/tmp/klspw_nonexistent_file_xyz.txt"),
+                         doctest::Contains("Cannot determine file size"), std::runtime_error);
 }
 
 // --- require ---
@@ -202,21 +203,12 @@ TEST_CASE("require throws when condition is false") {
 }
 
 TEST_CASE("require formats message with args") {
-    try {
-        klspw::require(false, "value is {}", 42);
-        FAIL("should have thrown");
-    } catch (const std::runtime_error& e) {
-        CHECK(std::string_view{e.what()}.contains("42"));
-    }
+    CHECK_THROWS_WITH_AS(klspw::require(false, "value is {}", 42), doctest::Contains("42"), std::runtime_error);
 }
 
 TEST_CASE("require auto-converts fs::path") {
-    try {
-        klspw::require(false, "path: {}", std::filesystem::path{"/tmp/test"});
-        FAIL("should have thrown");
-    } catch (const std::runtime_error& e) {
-        CHECK(std::string_view{e.what()}.contains("/tmp/test"));
-    }
+    CHECK_THROWS_WITH_AS(klspw::require(false, "path: {}", std::filesystem::path{"/tmp/test"}),
+                         doctest::Contains("/tmp/test"), std::runtime_error);
 }
 
 TEST_CASE("require evaluates callable lazily") {

@@ -37,7 +37,7 @@ build:
 roots:
   - path: ./src/my-service
   - path: ./src/other-service
-    command: ["brazil-build", "gradle"]
+    command: ["gradle"]
     gradle_args: ["--no-daemon"]
 
 options:

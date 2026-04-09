@@ -58,6 +58,12 @@ int main(int argc, char* argv[]) try {
     auto* insp = app.add_subcommand("inspect", "Print discovered modules, jars, and source roots");
     auto* val = app.add_subcommand("validate", "Validate config and discovered paths");
 
+    std::string gradle_output_path;
+    for (auto* sub : {gen, insp}) {
+        sub->add_option("--save-gradle-output", gradle_output_path,
+                        "Save raw Gradle output to a file (path) or directory (uses default filename per root)");
+    }
+
     CLI11_PARSE(app, argc, argv);
 
     set_log_level(log_level);
@@ -89,7 +95,11 @@ int main(int argc, char* argv[]) try {
     }
 
     klspw::GradleRunner runner;
-    const klspw::Pipeline pipeline{std::move(cfg), std::ref(runner)};
+    klspw::Pipeline pipeline{std::move(cfg), std::ref(runner)};
+
+    if (!gradle_output_path.empty()) {
+        pipeline.set_gradle_output_path(gradle_output_path);
+    }
 
     if (gen->parsed()) {
         pipeline.write_workspace();

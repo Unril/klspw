@@ -54,23 +54,9 @@ TEST_CASE("root workspace structure") {
 
     SUBCASE("dependencies contain library and inheritedSdk") {
         const auto& deps = ws.modules[0].dependencies;
-        bool has_lib = false;
-        bool has_isdk = false;
-        bool has_msrc = false;
-        for (const auto& d : deps) {
-            if (std::holds_alternative<klspw::LibraryDep>(d)) {
-                has_lib = true;
-            }
-            if (std::holds_alternative<klspw::InheritedSdk>(d)) {
-                has_isdk = true;
-            }
-            if (std::holds_alternative<klspw::ModuleSource>(d)) {
-                has_msrc = true;
-            }
-        }
-        CHECK(has_lib);
-        CHECK(has_isdk);
-        CHECK(has_msrc);
+        CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::LibraryDep>(d); }));
+        CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::InheritedSdk>(d); }));
+        CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::ModuleSource>(d); }));
     }
 
     SUBCASE("library") {
@@ -119,6 +105,7 @@ TEST_CASE("proj workspace structure") {
 TEST_CASE("DependencyScope round-trips") {
     for (auto scope : {klspw::DependencyScope::compile, klspw::DependencyScope::test, klspw::DependencyScope::runtime,
                        klspw::DependencyScope::provided}) {
+        CAPTURE(scope);
         CHECK(from_json<klspw::DependencyScope>(to_json(scope)) == scope);
     }
 }

@@ -18,7 +18,7 @@
 ///     - path: ./src/my-service
 ///     - path: ./src/other-service
 ///       build:
-///         command: ["brazil-build", "gradle"]
+///         command: ["gradle"]
 ///         gradle_args: ["--no-daemon"]
 ///   options:
 ///     include_tests: false
@@ -36,7 +36,7 @@ inline constexpr string_view gradle_task = "dumpKotlinLspModel";
 /// Behavioral flags controlling workspace generation.
 struct GenerationOptions {
     bool include_tests = true; ///< Include test source sets in the workspace.
-    bool attach_sources = true; ///< Discover and attach source jars to libraries (not yet implemented).
+    bool attach_sources = true; ///< Discover and attach source jars (-sources.jar) to libraries.
     bool follow_symlinks = true; ///< Follow symlinks when resolving paths (not yet implemented).
 };
 
@@ -45,7 +45,7 @@ struct GenerationOptions {
 /// The process runs in the root project directory. The resulting command line is:
 ///   {command...} --init-script {path} {gradle_args...} dumpKotlinLspModel
 struct BuildConfig {
-    strings command; ///< Build tool executable and fixed args (e.g., ["./gradlew"] or ["brazil-build", "gradle"]).
+    strings command; ///< Build tool executable and fixed args (e.g., ["./gradlew"]).
     strings gradle_args; ///< Extra Gradle flags (e.g., ["--quiet", "--no-daemon"]).
 
     /// Build the full command-line args for a Gradle invocation.

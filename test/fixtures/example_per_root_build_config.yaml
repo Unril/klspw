@@ -10,7 +10,7 @@ roots:
 
   - path: ./src/proj_3
     build:
-      command: ["brazil-build", "gradle"]
+      command: ["gradle"]
       gradle_args: ["--no-daemon", "--stacktrace"]
 
 options:

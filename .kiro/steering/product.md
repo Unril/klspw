@@ -24,7 +24,7 @@ It targets repositories where the default kotlin-lsp project import fails -- whe
 
 The config file (`workspace-kotlin-lsp-config.yaml`) defines:
 
-- Global and per-root build commands (e.g., `./gradlew` or `brazil-build gradle`)
+- Global and per-root build commands (e.g., `./gradlew`)
 - Gradle root project paths (resolved relative to config file directory)
 - Output workspace file path
 - JVM target version

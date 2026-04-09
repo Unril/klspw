@@ -1,6 +1,9 @@
 // init.gradle.kts
 import groovy.json.JsonOutput
 import org.gradle.api.Project
+import org.gradle.api.attributes.Bundling
+import org.gradle.api.attributes.Category
+import org.gradle.api.attributes.DocsType
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.SourceSet
 import java.io.File
@@ -27,10 +30,55 @@ fun Project.generatedSourceDirs(sourceSetName: String): List<String> {
     return dirs.toSortedPaths()
 }
 
+/// Resolve source jars for a configuration using Gradle's artifact view API.
+/// Returns a map from classes jar path to source jar path.
+fun Project.resolveSourceJars(configName: String): Map<String, String> {
+    val config = configurations.findByName(configName) ?: return emptyMap()
+    if (!config.isCanBeResolved) return emptyMap()
+
+    return runCatching {
+        // Resolve the source variant of each dependency.
+        val sourceArtifacts = config.incoming.artifactView {
+            withVariantReselection()
+            attributes {
+                attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category::class.java, Category.DOCUMENTATION))
+                attribute(DocsType.DOCS_TYPE_ATTRIBUTE, objects.named(DocsType::class.java, DocsType.SOURCES))
+                attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling::class.java, Bundling.EXTERNAL))
+            }
+        }.artifacts.artifacts
+
+        // Build a map: source jar stem (without -sources suffix) -> source jar path.
+        val sourcesByBaseName = mutableMapOf<String, String>()
+        for (artifact in sourceArtifacts) {
+            val name = artifact.file.name
+            val baseName = if (name.endsWith("-sources.jar")) {
+                name.removeSuffix("-sources.jar")
+            } else {
+                artifact.file.nameWithoutExtension
+            }
+            sourcesByBaseName[baseName] = artifact.file.safeCanonicalPath()
+        }
+
+        // Match classes jars to source jars by stem (using modern incoming API).
+        val classesArtifacts = config.incoming.artifacts.artifacts
+        val result = mutableMapOf<String, String>()
+        for (artifact in classesArtifacts) {
+            val classesPath = artifact.file.safeCanonicalPath()
+            val baseName = artifact.file.nameWithoutExtension
+            sourcesByBaseName[baseName]?.let { result[classesPath] = it }
+        }
+        result
+    }.getOrElse { e ->
+        logger.warn("klspw: failed to resolve source jars for $configName: ${e.message}")
+        emptyMap()
+    }
+}
+
 fun SourceSet.toModel(project: Project): Map<String, Any?> {
     val generatedSources = project.generatedSourceDirs(name)
     val allSourceRoots = (allSource.srcDirs.toSortedPaths() + generatedSources).distinct().sorted()
     val allJavaRoots = (java.srcDirs.toSortedPaths() + generatedSources).distinct().sorted()
+    val sourceJarMap = project.resolveSourceJars(compileClasspathConfigurationName)
 
     return mapOf(
         "name" to name,
@@ -41,6 +89,7 @@ fun SourceSet.toModel(project: Project): Map<String, Any?> {
         "resourcesDir" to output.resourcesDir?.safeCanonicalPath(),
         "compileClasspath" to runCatching { compileClasspath.files.toSortedPaths() }.getOrDefault(emptyList()),
         "runtimeClasspath" to runCatching { runtimeClasspath.files.toSortedPaths() }.getOrDefault(emptyList()),
+        "sourceClasspath" to sourceJarMap,
         "compileClasspathConfigurationName" to compileClasspathConfigurationName,
         "runtimeClasspathConfigurationName" to runtimeClasspathConfigurationName
     )

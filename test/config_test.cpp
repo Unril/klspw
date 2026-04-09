@@ -73,7 +73,7 @@ roots:
   - path: ./src/proj_a
   - path: ./src/proj_b
     build:
-      command: ["brazil-build", "gradle"]
+      command: ["gradle"]
       gradle_args: ["--no-daemon"]
 )");
     const auto cfg = klspw::Config::from_yaml(tmp.path);
@@ -88,7 +88,7 @@ roots:
 
     SUBCASE("second root uses per-root override") {
         const auto& build = cfg.build_for(cfg.roots()[1]);
-        CHECK(build.command == klspw::strings{"brazil-build", "gradle"});
+        CHECK(build.command == klspw::strings{"gradle"});
         CHECK(build.gradle_args == klspw::strings{"--no-daemon"});
     }
 }
@@ -99,7 +99,7 @@ version: 99
 roots:
   - path: ./src/proj
 )");
-    CHECK_THROWS_AS((void)klspw::Config::from_yaml(tmp.path), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("version"), std::runtime_error);
 }
 
 TEST_CASE("throws on root entry missing path") {
@@ -108,7 +108,7 @@ version: 1
 roots:
   - command: ["./gradlew"]
 )");
-    CHECK_THROWS_AS((void)klspw::Config::from_yaml(tmp.path), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("path"), std::runtime_error);
 }
 
 TEST_CASE("throws on missing version") {
@@ -116,18 +116,19 @@ TEST_CASE("throws on missing version") {
 roots:
   - path: ./src/proj
 )");
-    CHECK_THROWS_AS((void)klspw::Config::from_yaml(tmp.path), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("version"), std::runtime_error);
 }
 
 TEST_CASE("throws on missing roots") {
     const TempConfig tmp(R"(
 version: 1
 )");
-    CHECK_THROWS_AS((void)klspw::Config::from_yaml(tmp.path), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("roots"), std::runtime_error);
 }
 
 TEST_CASE("throws on nonexistent file") {
-    CHECK_THROWS_AS((void)klspw::Config::from_yaml("/tmp/klspw_nonexistent_config.yaml"), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml("/tmp/klspw_nonexistent_config.yaml"),
+                         doctest::Contains("not found"), std::runtime_error);
 }
 
 TEST_CASE("reads custom jvm_target") {
@@ -186,7 +187,7 @@ TEST_CASE("parses per-root build config without global build") {
         const auto& root = cfg.roots()[1];
         CHECK(cfg.root_path(root).filename() == "proj_3");
         const auto& build = cfg.build_for(root);
-        CHECK(build.command == klspw::strings{"brazil-build", "gradle"});
+        CHECK(build.command == klspw::strings{"gradle"});
         CHECK(build.gradle_args == klspw::strings{"--no-daemon", "--stacktrace"});
     }
 }

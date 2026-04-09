@@ -17,7 +17,7 @@ roots:
   - path: ./nonexistent_dir
 )");
     const auto cfg = klspw::Config::from_yaml(tmp.path);
-    CHECK_THROWS_AS(cfg.validate(), std::runtime_error);
+    CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("does not exist"), std::runtime_error);
 }
 
 TEST_CASE("validate succeeds with existing root path") {
@@ -47,7 +47,7 @@ roots:
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
-    CHECK_THROWS_AS(cfg.validate(), std::runtime_error);
+    CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("no build command"), std::runtime_error);
 }
 
 TEST_CASE("validate accepts per-root build command without global") {
@@ -80,5 +80,5 @@ roots:
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
-    CHECK_THROWS_AS(cfg.validate(), std::runtime_error);
+    CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("workspace_file"), std::runtime_error);
 }

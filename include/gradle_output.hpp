@@ -19,6 +19,7 @@
 
 #include "common.hpp"
 #include "config.hpp"
+#include "sources.hpp"
 #include "workspace_model.hpp"
 
 namespace klspw {
@@ -53,6 +54,7 @@ struct SourceSet {
     opt_string resources_dir; ///< Processed resources output directory.
     strings compile_classpath; ///< Jars available at compile time.
     strings runtime_classpath; ///< Jars available at runtime.
+    map<string, string> source_classpath; ///< Classes jar path -> source jar path (resolved by Gradle).
     string compile_classpath_configuration_name; ///< Gradle configuration name for compile classpath.
     string runtime_classpath_configuration_name; ///< Gradle configuration name for runtime classpath.
 
@@ -61,9 +63,11 @@ struct SourceSet {
     bool is_source() const { return !is_test(); }
     DependencyScope dep_scope() const { return is_test() ? DependencyScope::test : DependencyScope::compile; }
 
-    /// Source roots not in java_source_roots (includes resource dirs).
+    /// Source roots not in java_source_roots and not in resources_roots.
     /// Used to populate KotlinSettingsData.pure_kotlin_source_folders.
-    auto pure_kotlin_roots() const { return source_roots | not_in(java_source_roots); }
+    strings pure_kotlin_roots() const {
+        return source_roots | not_in(java_source_roots) | not_in(resources_roots) | to_vector();
+    }
 
     // --- Factory methods for workspace model types ---
 
@@ -75,8 +79,17 @@ struct SourceSet {
         return {.path = path, .type = is_test() ? "java-test-resource" : "java-resource"};
     }
 
-    static LibraryData library_from_jar(string_view jar) {
-        return {.name = library_name_for_jar(jar), .type = "java-imported", .roots = {{.path = string{jar}}}};
+    LibraryData library_from_jar(string_view jar, bool attach_sources) const {
+        vector<LibraryRootData> roots{{.path = string{jar}}};
+        if (attach_sources) {
+            // Prefer Gradle-resolved source jar, fall back to filesystem discovery.
+            if (auto it = source_classpath.find(string{jar}); it != source_classpath.end()) {
+                roots.push_back({.path = it->second, .type = "SOURCES"});
+            } else if (auto src = find_sources(jar)) {
+                roots.push_back({.path = std::move(*src), .type = "SOURCES"});
+            }
+        }
+        return {.name = library_name_for_jar(jar), .type = "java-imported", .roots = std::move(roots)};
     }
 
     LibraryDep library_dep_from_jar(string_view jar) const {
@@ -94,8 +107,9 @@ struct SourceSet {
         return roots;
     }
 
-    vector<LibraryData> collect_libraries() const {
-        return compile_classpath | v::transform(library_from_jar) | to_vector();
+    vector<LibraryData> collect_libraries(bool attach_sources) const {
+        auto to_lib = [&](const auto& jar) { return library_from_jar(jar, attach_sources); };
+        return compile_classpath | v::transform(to_lib) | to_vector();
     }
 
     vector<LibraryDep> collect_library_deps() const {
@@ -192,14 +206,16 @@ struct GradleBuildOutput {
         auto active = active_projects() | to_vector();
 
         // Compute active source sets once per project to avoid redundant filtering.
-        auto sets_per_project =
-            active | v::transform([&](const auto& p) { return p.active_sets(options); }) | to_vector();
+        auto to_active_sets = [&](const auto& p) { return p.active_sets(options); };
+        auto sets_per_project = active | v::transform(to_active_sets) | to_vector();
+
+        auto to_libs = [&](const auto& ss) { return ss.collect_libraries(options.attach_sources); };
 
         WorkspaceData ws;
         for (const auto& [proj, sets] : v::zip(active, sets_per_project)) {
             ws.modules.push_back(proj.to_module(sets));
             ws.kotlin_settings.push_back(proj.to_kotlin_settings(compiler_args_json, sets));
-            ws.libraries.append_range(sets | v::transform(&SourceSet::collect_libraries) | v::join | to_vector());
+            ws.libraries.append_range(sets | v::transform(to_libs) | v::join | to_vector());
         }
 
         // Deduplicate libraries by name, keeping first occurrence.
