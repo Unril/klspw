@@ -137,7 +137,8 @@ class Config {
         }
 
         for (const auto& root : data_.roots) {
-            require(fs::is_directory(root_path(root)), "root path does not exist: {}", root.path);
+            const auto resolved = root_path(root);
+            require(fs::is_directory(resolved), "root path does not exist: {}", resolved);
         }
 
         require(!data_.build.empty() || !r::all_of(data_.roots, [](const auto& r) { return r.command.empty(); }),

@@ -112,8 +112,8 @@ TEST_CASE("parses project with source sets") {
     CHECK(ss.resources_dir.has_value());
     CHECK(ss.compile_classpath.size() == 1);
     CHECK(ss.runtime_classpath.size() == 2);
-    CHECK(ss.compile_classpath_config_name == "compileClasspath");
-    CHECK(ss.runtime_classpath_config_name == "runtimeClasspath");
+    CHECK(ss.compile_classpath_configuration_name == "compileClasspath");
+    CHECK(ss.runtime_classpath_configuration_name == "runtimeClasspath");
     CHECK_FALSE(ss.is_test());
 }
 
@@ -453,10 +453,10 @@ TEST_CASE("GradleProject::to_module builds module with deps and content roots") 
     CHECK(std::holds_alternative<klspw::InheritedSdk>(mod.dependencies[1]));
     CHECK(std::holds_alternative<klspw::ModuleSource>(mod.dependencies[2]));
 
-    REQUIRE(mod.contentRoots.size() == 1);
-    CHECK(mod.contentRoots[0].path == "/tmp/proj");
-    REQUIRE(mod.contentRoots[0].sourceRoots.size() == 1);
-    CHECK(mod.contentRoots[0].sourceRoots[0].type == "java-source");
+    REQUIRE(mod.content_roots.size() == 1);
+    CHECK(mod.content_roots[0].path == "/tmp/proj");
+    REQUIRE(mod.content_roots[0].source_roots.size() == 1);
+    CHECK(mod.content_roots[0].source_roots[0].type == "java-source");
 }
 
 TEST_CASE("GradleProject::to_module excludes test source sets when include_tests=false") {
@@ -476,12 +476,12 @@ TEST_CASE("GradleProject::to_module excludes test source sets when include_tests
 
     const auto mod_no_tests = output.projects[0].to_module(no_tests);
     // Only main source root, only 1 lib dep (a.jar) + 2 sentinels
-    CHECK(mod_no_tests.contentRoots[0].sourceRoots.size() == 1);
+    CHECK(mod_no_tests.content_roots[0].source_roots.size() == 1);
     CHECK(mod_no_tests.dependencies.size() == 3);
 
     const auto mod_with_tests = output.projects[0].to_module(with_tests);
     // main + test source roots, 2 lib deps (a.jar deduped, junit.jar) + 2 sentinels
-    CHECK(mod_with_tests.contentRoots[0].sourceRoots.size() == 2);
+    CHECK(mod_with_tests.content_roots[0].source_roots.size() == 2);
     CHECK(mod_with_tests.dependencies.size() == 4);
 }
 
@@ -539,15 +539,13 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
 
     CHECK(ks.name == "Kotlin");
     CHECK(ks.module == "proj");
-    CHECK(ks.externalProjectId == ":proj:unspecified");
-    CHECK(ks.compilerArguments == R"(J{"jvmTarget":"21"})");
+    CHECK(ks.external_project_id == ":proj:unspecified");
+    CHECK(ks.compiler_arguments == R"(J{"jvmTarget":"21"})");
 
-    // source_roots: both java and kotlin dirs
-    REQUIRE(ks.sourceRoots.size() == 2);
+    REQUIRE(ks.source_roots.size() == 2);
 
-    // pure kotlin: only the kotlin dir (not the java dir)
-    REQUIRE(ks.pureKotlinSourceFolders.size() == 1);
-    CHECK(ks.pureKotlinSourceFolders[0] == "/tmp/proj/src/main/kotlin");
+    REQUIRE(ks.pure_kotlin_source_folders.size() == 1);
+    CHECK(ks.pure_kotlin_source_folders[0] == "/tmp/proj/src/main/kotlin");
 }
 
 // --- GradleBuildOutput → WorkspaceData ---
@@ -561,20 +559,15 @@ TEST_CASE("GradleBuildOutput::to_workspace builds complete workspace") {
     CHECK(ws.modules[0].name == "my-kotlin-service");
     CHECK(ws.modules[0].type == "JAVA_MODULE");
 
-    // Module has content roots with source roots
-    REQUIRE_FALSE(ws.modules[0].contentRoots.empty());
-    CHECK_FALSE(ws.modules[0].contentRoots[0].sourceRoots.empty());
+    REQUIRE_FALSE(ws.modules[0].content_roots.empty());
+    CHECK_FALSE(ws.modules[0].content_roots[0].source_roots.empty());
 
-    // Module has library deps + inheritedSdk + moduleSource
     CHECK(ws.modules[0].dependencies.size() >= 3);
-
-    // Libraries from main compile classpath (kotlin-stdlib + jackson-core)
     CHECK(ws.libraries.size() == 2);
 
-    // Kotlin settings for the module
-    REQUIRE(ws.kotlinSettings.size() == 1);
-    CHECK(ws.kotlinSettings[0].module == "my-kotlin-service");
-    CHECK(ws.kotlinSettings[0].compilerArguments == R"(J{"jvmTarget":"21"})");
+    REQUIRE(ws.kotlin_settings.size() == 1);
+    CHECK(ws.kotlin_settings[0].module == "my-kotlin-service");
+    CHECK(ws.kotlin_settings[0].compiler_arguments == R"(J{"jvmTarget":"21"})");
 }
 
 TEST_CASE("GradleBuildOutput::to_workspace deduplicates libraries across projects") {
@@ -631,7 +624,7 @@ TEST_CASE("GradleBuildOutput::to_workspace skips skipped projects") {
 
     CHECK(ws.modules.size() == 1);
     CHECK(ws.modules[0].name == "active");
-    CHECK(ws.kotlinSettings.size() == 1);
+    CHECK(ws.kotlin_settings.size() == 1);
 }
 
 // --- WorkspaceData round-trip through to_workspace ---
@@ -640,7 +633,6 @@ TEST_CASE("to_workspace output serializes to valid JSON") {
     const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
     const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", no_tests);
 
-    // Serialize to JSON and back via glaze
     const auto json_result = glz::write_json(ws);
     REQUIRE(json_result.has_value());
     const auto ws2 = glz::read_json<klspw::WorkspaceData>(json_result.value());
@@ -648,7 +640,7 @@ TEST_CASE("to_workspace output serializes to valid JSON") {
 
     CHECK(ws2->modules.size() == ws.modules.size());
     CHECK(ws2->libraries.size() == ws.libraries.size());
-    CHECK(ws2->kotlinSettings.size() == ws.kotlinSettings.size());
+    CHECK(ws2->kotlin_settings.size() == ws.kotlin_settings.size());
 }
 
 // --- WorkspaceData::merge ---
@@ -681,12 +673,12 @@ TEST_CASE("WorkspaceData::merge combines modules and deduplicates libraries") {
 }
 
 TEST_CASE("WorkspaceData::merge appends kotlin settings") {
-    klspw::WorkspaceData ws1{.kotlinSettings = {{.name = "Kotlin", .module = "a"}}};
-    klspw::WorkspaceData ws2{.kotlinSettings = {{.name = "Kotlin", .module = "b"}}};
+    klspw::WorkspaceData ws1{.kotlin_settings = {{.name = "Kotlin", .module = "a"}}};
+    klspw::WorkspaceData ws2{.kotlin_settings = {{.name = "Kotlin", .module = "b"}}};
 
     ws1.merge(std::move(ws2));
 
-    REQUIRE(ws1.kotlinSettings.size() == 2);
-    CHECK(ws1.kotlinSettings[0].module == "a");
-    CHECK(ws1.kotlinSettings[1].module == "b");
+    REQUIRE(ws1.kotlin_settings.size() == 2);
+    CHECK(ws1.kotlin_settings[0].module == "a");
+    CHECK(ws1.kotlin_settings[1].module == "b");
 }

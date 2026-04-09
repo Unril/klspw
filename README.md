@@ -1,143 +1,115 @@
 # klspw
 
-`klspw` is a small native CLI that generates `workspace.json` for [kotlin-lsp].
+Generate `workspace.json` for [kotlin-lsp] from Gradle builds.
 
-It targets repositories where the default `kotlin-lsp` project import does not work well enough -- when the real build runs through an internal wrapper around Gradle, or when dependencies come from custom package/cache layouts.
+Targets repositories where the default kotlin-lsp project import does not work -- when the build runs through a wrapper around Gradle, or when dependencies come from custom package/cache layouts.
 
-The tool reads `workspace-kotlin-lsp-config.yaml`, runs the configured Gradle command with a temporary init script, extracts source-set and classpath data, optionally enriches dependency source roots, and writes `workspace.json`.
+## Quick start
 
-## Status
+```bash
+brew install cmake ninja just
+export VCPKG_ROOT="$HOME/vcpkg"  # or wherever your vcpkg checkout lives
+just check                        # configure + build + test
+```
 
-Early, intentionally narrow in scope.
+## Usage
 
-Current focus:
+```bash
+klspw -c config.yaml generate   # run Gradle, write workspace.json
+klspw -c config.yaml inspect    # run Gradle, log discovered modules/libraries
+klspw -c config.yaml validate   # check config paths and build commands
+klspw --log-level debug -c config.yaml generate  # verbose output
+```
 
-- Kotlin/JVM and Java/JVM projects
-- Gradle-based discovery via temporary init script
-- Custom package/cache layouts (e.g. Brazil-style package caches)
-- Debuggable `inspect`, `validate`, and `generate` flows
+## Configuration
 
-Not a goal right now:
+Config file: `workspace-kotlin-lsp-config.yaml`
 
-- Full Kotlin Multiplatform modeling
-- Replacing Gradle
-- General-purpose build tool
-- Plugin architecture
+```yaml
+version: 1
+workspace_file: ./workspace.json
+jvm_target: "21"
+
+build:
+  command: ["./gradlew"]
+  gradle_args: ["--quiet"]
+
+roots:
+  - path: ./src/my-service
+  - path: ./src/other-service
+    command: ["brazil-build", "gradle"]
+    gradle_args: ["--no-daemon"]
+
+options:
+  include_tests: true
+  attach_sources: true
+  follow_symlinks: true
+```
+
+- `build` sets the default Gradle command for all roots
+- Each root can override `command` and `gradle_args`
+- Paths are resolved relative to the config file directory
+- `options.include_tests` controls whether test source sets appear in the workspace
+
+## How it works
+
+1. Read config, validate paths
+2. For each root, run the configured Gradle command with a temporary init script
+3. Extract JSON between `KLSPW_BEGIN`/`KLSPW_END` delimiters in Gradle stdout
+4. Parse source sets, classpaths, and project metadata
+5. Convert to kotlin-lsp workspace model (modules, libraries, kotlin settings)
+6. Merge results across roots, deduplicating libraries by name
+7. Write deterministic, pretty-printed `workspace.json`
 
 ## Project structure
 
 ```text
-.
-├── CMakeLists.txt
-├── CMakePresets.json
-├── vcpkg.json
-├── justfile
-├── README.md
-├── AGENTS.md
-├── src/
-│   └── main.cpp
-└── test/
-    └── smoke.cpp
+include/
+  common.hpp            # type aliases, utilities, glaze opts
+  config.hpp            # config model + YAML loading via glaze
+  gradle.hpp            # GradleRunner: init script lifecycle
+  gradle_output.hpp     # Gradle model types + parser + workspace conversion
+  workspace_model.hpp   # kotlin-lsp workspace.json schema types
+  pipeline.hpp          # Pipeline: orchestrates generate/inspect commands
+  process.hpp           # ProcessRunner: subprocess execution via reproc++
+src/
+  main.cpp              # CLI entry point (CLI11)
+  common.cpp            # file I/O and string utilities
+test/
+  test_common.hpp       # shared RAII test fixtures
+  smoke.cpp             # basic smoke tests
+  config_test.cpp       # config loading and validation
+  gradle_test.cpp       # Gradle parsing + workspace conversion
+  workspace_json_test.cpp  # workspace model round-trip serialization
+  common_test.cpp       # utility function tests
+  process_test.cpp      # subprocess execution tests
+  pipeline_test.cpp     # config validation tests
+resources/
+  init.gradle.kts       # Gradle init script (embedded at build time)
 ```
-
-As the project grows, headers will live in `include/` following the layout described in `AGENTS.md`.
-
-## Prerequisites
-
-### macOS (Homebrew)
-
-```bash
-brew install cmake ninja vcpkg just
-```
-
-### vcpkg setup
-
-Set `VCPKG_ROOT` to point at a vcpkg checkout:
-
-```bash
-git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
-export VCPKG_ROOT="$HOME/vcpkg"
-```
-
-Add the export to your shell profile so it persists.
 
 ## Build
 
 ```bash
-just configure
-just build
-just test
-```
-
-Or all at once:
-
-```bash
-just check
-```
-
-### Manual commands
-
-```bash
-cmake --preset dev
-cmake --build --preset dev
-ctest --preset dev
-```
-
-### Release build
-
-```bash
-cmake --preset release
-cmake --build --preset release
-ctest --preset release
-```
-
-## Commands
-
-The CLI currently stubs three subcommands:
-
-- `generate` -- generate `workspace.json`
-- `inspect` -- print discovered modules, jars, and source roots
-- `validate` -- validate config and discovered paths
-
-```bash
-./build/dev/klspw --help
-./build/dev/klspw generate
-./build/dev/klspw inspect
-./build/dev/klspw validate
+just configure   # cmake --preset dev
+just build       # cmake --build --preset dev
+just test        # ctest --preset dev
+just check       # all three
 ```
 
 ## Dependencies
 
 - [CLI11](https://github.com/CLIUtils/CLI11) -- command-line parsing
-- [yaml-cpp](https://github.com/jbeder/yaml-cpp) -- YAML parsing
-- [nlohmann/json](https://github.com/nlohmann/json) -- JSON emission
+- [glaze](https://github.com/stephenberry/glaze) -- JSON and YAML serialization
+- [reproc++](https://github.com/DaanDeMeyer/reproc) -- subprocess execution
+- [spdlog](https://github.com/gabime/spdlog) -- logging
 - [doctest](https://github.com/doctest/doctest) -- testing
 
 All managed via vcpkg manifest mode.
 
-## How it will work
-
-High-level flow (not yet implemented):
-
-1. Read `workspace-kotlin-lsp-config.yaml`
-2. Resolve configured roots
-3. Generate a temporary `init.gradle.kts`
-4. Run the configured Gradle command
-5. Extract a delimited JSON payload from stdout
-6. Parse projects, source sets, classpaths, and outputs
-7. Discover dependency sources when possible
-8. Emit deterministic `workspace.json`
-
-Source discovery strategy:
-
-1. Prefer source roots reported by the build model
-2. Apply filesystem heuristics for known package/cache layouts
-3. Try source-jar discovery
-4. Otherwise keep the dependency binary-only
-
 ## References
 
-- [kotlin-lsp](https://github.com/Kotlin/kotlin-lsp)
+- [kotlin-lsp]
 - [CMake Presets](https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html)
 - [vcpkg manifest mode](https://learn.microsoft.com/en-us/vcpkg/concepts/manifest-mode)
 

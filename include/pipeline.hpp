@@ -25,7 +25,7 @@ class Pipeline {
             workspace.merge(build_root_workspace(root));
         }
         spdlog::info("Pipeline complete: {} module(s), {} library(ies), {} kotlin setting(s)",
-                     workspace.modules.size(), workspace.libraries.size(), workspace.kotlinSettings.size());
+                     workspace.modules.size(), workspace.libraries.size(), workspace.kotlin_settings.size());
         return workspace;
     }
 

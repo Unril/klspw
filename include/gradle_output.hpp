@@ -13,8 +13,7 @@
 ///   GradleBuildOutput -> WorkspaceData (the full pipeline entry point)
 ///
 /// JSON field names are camelCase (matching the Kotlin init script output).
-/// C++ field names are snake_case. The mapping is defined via inline struct glaze
-/// metadata on each type.
+/// C++ field names are snake_case. glz::camel_case auto-converts at compile time.
 
 #include <ranges>
 
@@ -51,18 +50,8 @@ struct SourceSet {
     opt_string resources_dir;
     strings compile_classpath;
     strings runtime_classpath;
-    string compile_classpath_config_name;
-    string runtime_classpath_config_name;
-
-    struct glaze {
-        using T = SourceSet;
-        static constexpr auto value =
-            glz::object("name", &T::name, "sourceRoots", &T::source_roots, "javaSourceRoots", &T::java_source_roots,
-                        "resourcesRoots", &T::resources_roots, "classesDirs", &T::classes_dirs, "resourcesDir",
-                        &T::resources_dir, "compileClasspath", &T::compile_classpath, "runtimeClasspath",
-                        &T::runtime_classpath, "compileClasspathConfigurationName", &T::compile_classpath_config_name,
-                        "runtimeClasspathConfigurationName", &T::runtime_classpath_config_name);
-    };
+    string compile_classpath_configuration_name;
+    string runtime_classpath_configuration_name;
 
     /// Heuristic: any source set whose name contains "test" or "Test".
     bool is_test() const { return name.contains("test") || name.contains("Test"); }
@@ -73,6 +62,14 @@ struct SourceSet {
     auto pure_kotlin_roots() const { return source_roots | not_in(java_source_roots); }
 
     // --- Factory methods for workspace model types ---
+
+    SourceRootData source_root(const string& path) const {
+        return {.path = path, .type = is_test() ? "java-test" : "java-source"};
+    }
+
+    SourceRootData resource_root(const string& path) const {
+        return {.path = path, .type = is_test() ? "java-test-resource" : "java-resource"};
+    }
 
     static LibraryData library_from_jar(const string& jar) {
         return {.name = library_name_for_jar(jar), .roots = {{.path = jar}}};
@@ -85,15 +82,10 @@ struct SourceSet {
     // --- Workspace model conversion ---
 
     vector<SourceRootData> to_source_roots() const {
-        const auto* const src_type = is_test() ? "java-test" : "java-source";
-        const auto* const res_type = is_test() ? "java-test-resource" : "java-resource";
-
-        auto sources = source_roots | not_in(resources_roots) |
-                       v::transform([&](const auto& sr) { return SourceRootData{sr, src_type}; });
-        auto resources = resources_roots | v::transform([&](const auto& rr) { return SourceRootData{rr, res_type}; });
-
-        auto roots = sources | to_vector();
-        roots.append_range(resources);
+        auto to_src = [&](const auto& p) { return source_root(p); };
+        auto to_res = [&](const auto& p) { return resource_root(p); };
+        auto roots = source_roots | not_in(resources_roots) | v::transform(to_src) | to_vector();
+        roots.append_range(resources_roots | v::transform(to_res));
         return roots;
     }
 
@@ -102,7 +94,7 @@ struct SourceSet {
     }
 
     vector<LibraryDep> collect_library_deps() const {
-        return compile_classpath | v::transform([this](const auto& jar) { return library_dep_from_jar(jar); }) |
+        return compile_classpath | v::transform([&](const auto& jar) { return library_dep_from_jar(jar); }) |
                to_vector();
     }
 };
@@ -118,13 +110,6 @@ struct GradleProject {
     strings plugins;
     vector<SourceSet> source_sets;
     opt_string skip_reason;
-
-    struct glaze {
-        using T = GradleProject;
-        static constexpr auto value =
-            glz::object("projectPath", &T::project_path, "projectDir", &T::project_dir, "kind", &T::kind, "plugins",
-                        &T::plugins, "sourceSets", &T::source_sets, "skipReason", &T::skip_reason);
-    };
 
     bool is_skipped() const { return skip_reason.has_value(); }
     string module_name() const { return fs::path{project_dir}.filename().string(); }
@@ -143,7 +128,7 @@ struct GradleProject {
         if (source_roots.empty()) {
             return {};
         }
-        return {{.path = project_dir, .sourceRoots = std::move(source_roots)}};
+        return {{.path = project_dir, .source_roots = std::move(source_roots)}};
     }
 
     vector<ContentRootData> module_content_roots(const vector<SourceSet>& sets) const {
@@ -164,7 +149,7 @@ struct GradleProject {
             .name = module_name(),
             .type = "JAVA_MODULE",
             .dependencies = module_dependencies(sets),
-            .contentRoots = module_content_roots(sets),
+            .content_roots = module_content_roots(sets),
         };
     }
 
@@ -178,11 +163,11 @@ struct GradleProject {
         const auto sets = active_sets(options);
         return {
             .name = "Kotlin",
-            .sourceRoots = sets | v::transform(&SourceSet::source_roots) | v::join | to_vector(),
+            .source_roots = sets | v::transform(&SourceSet::source_roots) | v::join | to_vector(),
             .module = mod_name,
-            .externalProjectId = format(":{}:unspecified", mod_name),
-            .pureKotlinSourceFolders = sets | v::transform(&SourceSet::pure_kotlin_roots) | v::join | to_vector(),
-            .compilerArguments = compiler_args_json,
+            .external_project_id = format(":{}:unspecified", mod_name),
+            .pure_kotlin_source_folders = sets | v::transform(&SourceSet::pure_kotlin_roots) | v::join | to_vector(),
+            .compiler_arguments = compiler_args_json,
         };
     }
 };
@@ -195,11 +180,6 @@ struct GradleBuildOutput {
     string root_project;
     vector<GradleProject> projects;
 
-    struct glaze {
-        using T = GradleBuildOutput;
-        static constexpr auto value = glz::object("rootProject", &T::root_project, "projects", &T::projects);
-    };
-
     size_t active_project_count() const {
         return static_cast<size_t>(r::count_if(projects, std::not_fn(&GradleProject::is_skipped)));
     }
@@ -208,15 +188,14 @@ struct GradleBuildOutput {
 
     WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
         auto active = active_projects();
+        auto to_module = [&](const auto& p) { return p.to_module(options); };
+        auto to_settings = [&](const auto& p) { return p.to_kotlin_settings(compiler_args_json, options); };
+        auto to_libs = [&](const auto& p) { return p.collect_libraries(options); };
 
-        auto kotlin_settings =
-            active | v::transform([&](const auto& p) { return p.to_kotlin_settings(compiler_args_json, options); }) |
-            to_vector();
-        auto all_libs = active | v::transform([&](const auto& p) { return p.collect_libraries(options); }) | v::join;
         return {
-            .modules = active | v::transform([&](const auto& p) { return p.to_module(options); }) | to_vector(),
-            .libraries = all_libs | unique_by(&LibraryData::name),
-            .kotlinSettings = std::move(kotlin_settings),
+            .modules = active | v::transform(to_module) | to_vector(),
+            .libraries = active | v::transform(to_libs) | v::join | unique_by(&LibraryData::name),
+            .kotlin_settings = active | v::transform(to_settings) | to_vector(),
         };
     }
 };
@@ -230,7 +209,7 @@ class GradleOutputParser {
 
     static string extract_json(string_view raw_output) {
         auto result = extract_between(raw_output, {.open = begin_delimiter, .close = end_delimiter});
-        require(result.has_value(), "KLSPW_BEGIN/KLSPW_END delimiters not found in Gradle output");
+        require(result.has_value(), "{}/{} delimiters not found in Gradle output", begin_delimiter, end_delimiter);
         return std::move(*result);
     }
 
@@ -243,3 +222,8 @@ class GradleOutputParser {
 };
 
 } // namespace klspw
+
+// camel_case auto-converts snake_case C++ fields to camelCase JSON keys.
+template <> struct glz::meta<klspw::SourceSet> : glz::camel_case {};
+template <> struct glz::meta<klspw::GradleProject> : glz::camel_case {};
+template <> struct glz::meta<klspw::GradleBuildOutput> : glz::camel_case {};
