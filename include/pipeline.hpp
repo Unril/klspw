@@ -31,8 +31,10 @@ class Pipeline {
         for (const auto& root : cfg_.roots()) {
             workspace.merge(build_root_workspace(root));
         }
-        spdlog::info("Pipeline complete: {} module(s), {} library(ies), {} kotlin setting(s)", workspace.modules.size(),
-                     workspace.libraries.size(), workspace.kotlin_settings.size());
+        spdlog::info("Pipeline complete: {} module(s), {} library(ies), {} kotlin setting(s)",
+            workspace.modules.size(),
+            workspace.libraries.size(),
+            workspace.kotlin_settings.size());
         return workspace;
     }
 
@@ -73,8 +75,10 @@ class Pipeline {
 
         spdlog::info("Kotlin settings ({}):", ws.kotlin_settings.size());
         for (const auto& ks : ws.kotlin_settings) {
-            spdlog::info("  module={}, {} source root(s), {} pure-kotlin folder(s)", ks.module, ks.source_roots.size(),
-                         ks.pure_kotlin_source_folders.size());
+            spdlog::info("  module={}, {} source root(s), {} pure-kotlin folder(s)",
+                ks.module,
+                ks.source_roots.size(),
+                ks.pure_kotlin_source_folders.size());
         }
     }
 
@@ -103,18 +107,24 @@ class Pipeline {
             if (proj.is_skipped()) {
                 spdlog::debug("  project {} [SKIPPED: {}]", proj.project_path, *proj.skip_reason);
             } else {
-                spdlog::debug("  project {} ({} source set(s), {} plugin(s))", proj.project_path,
-                              proj.source_sets.size(), proj.plugins.size());
+                spdlog::debug("  project {} ({} source set(s), {} plugin(s))",
+                    proj.project_path,
+                    proj.source_sets.size(),
+                    proj.plugins.size());
                 for (const auto& ss : proj.source_sets) {
-                    spdlog::debug("    source set '{}': {} source root(s), {} compile classpath jar(s)", ss.name,
-                                  ss.source_roots.size(), ss.compile_classpath.size());
+                    spdlog::debug("    source set '{}': {} source root(s), {} compile classpath jar(s)",
+                        ss.name,
+                        ss.source_roots.size(),
+                        ss.compile_classpath.size());
                 }
             }
         }
 
         const auto ws = build_output.to_workspace(cfg_.compiler_arguments_json(), cfg_.options());
-        spdlog::debug("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)", ws.modules.size(),
-                      ws.libraries.size(), ws.kotlin_settings.size());
+        spdlog::debug("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)",
+            ws.modules.size(),
+            ws.libraries.size(),
+            ws.kotlin_settings.size());
         return ws;
     }
 

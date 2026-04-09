@@ -93,12 +93,12 @@ bool has_sources_root(const klspw::LibraryData& lib) {
 
 bool has_inherited_sdk(const klspw::ModuleData& mod) {
     return std::ranges::any_of(mod.dependencies,
-                               [](const auto& d) { return std::holds_alternative<klspw::InheritedSdk>(d); });
+        [](const auto& d) { return std::holds_alternative<klspw::InheritedSdk>(d); });
 }
 
 bool has_module_source(const klspw::ModuleData& mod) {
     return std::ranges::any_of(mod.dependencies,
-                               [](const auto& d) { return std::holds_alternative<klspw::ModuleSource>(d); });
+        [](const auto& d) { return std::holds_alternative<klspw::ModuleSource>(d); });
 }
 
 } // namespace
@@ -139,9 +139,7 @@ TEST_CASE("integration: simple project") {
         CHECK(ks.compiler_arguments->contains("jvmTarget"));
     }
 
-    SUBCASE("libraries include kotlin-stdlib") {
-        CHECK(has_library(ws, "kotlin-stdlib"));
-    }
+    SUBCASE("libraries include kotlin-stdlib") { CHECK(has_library(ws, "kotlin-stdlib")); }
 }
 
 // --- with-deps: guava + test deps ---
@@ -165,9 +163,7 @@ TEST_CASE("integration: with-deps project") {
         CHECK(has_library(ws, "kotlin-stdlib"));
     }
 
-    SUBCASE("libraries have more than just kotlin-stdlib") {
-        CHECK(ws.libraries.size() > 5);
-    }
+    SUBCASE("libraries have more than just kotlin-stdlib") { CHECK(ws.libraries.size() > 5); }
 
     SUBCASE("source jars attached to libraries") {
         const auto with_sources =
@@ -195,9 +191,7 @@ TEST_CASE("integration: multi-project build") {
         CHECK(std::ranges::any_of(ws.modules, [](const auto& m) { return m.name == "lib"; }));
     }
 
-    SUBCASE("kotlin settings for each module with source sets") {
-        CHECK(ws.kotlin_settings.size() >= 2);
-    }
+    SUBCASE("kotlin settings for each module with source sets") { CHECK(ws.kotlin_settings.size() >= 2); }
 
     SUBCASE("libraries are deduplicated across subprojects") {
         const auto stdlib_count =
@@ -217,9 +211,7 @@ TEST_CASE("integration: multi-root project merges two Gradle roots") {
         CHECK(std::ranges::any_of(ws.modules, [](const auto& m) { return m.name == "service"; }));
     }
 
-    SUBCASE("produces two kotlin settings") {
-        CHECK(ws.kotlin_settings.size() == 2);
-    }
+    SUBCASE("produces two kotlin settings") { CHECK(ws.kotlin_settings.size() == 2); }
 
     SUBCASE("libraries are deduplicated across roots") {
         const auto stdlib_count =

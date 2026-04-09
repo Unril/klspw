@@ -1,27 +1,56 @@
 BasedOnStyle: LLVM
 Language: Cpp
 Standard: Latest
+
 ColumnLimit: 120
+
 IndentWidth: 4
+ContinuationIndentWidth: 4
 AccessModifierOffset: -2
-AllowShortFunctionsOnASingleLine: Inline
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLoopsOnASingleLine: false
+
 BreakBeforeBraces: Attach
+AlignAfterOpenBracket: false
+
+# Avoid overly dense wrapped argument/parameter lists.
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+BinPackArguments: false
+BinPackParameters: OnePerLine
+
+# Keep constructors readable when they wrap.
+PackConstructorInitializers: CurrentLine
+ConstructorInitializerIndentWidth: 4
+
+# Avoid dense one-liners.
+AllowShortFunctionsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortBlocksOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Keep pointer/reference style stable.
+DerivePointerAlignment: false
 PointerAlignment: Left
 ReferenceAlignment: Left
+
+# Class layout readability.
+EmptyLineBeforeAccessModifier: LogicalBlock
+EmptyLineAfterAccessModifier: Never
+
 SpaceAfterCStyleCast: false
 SpaceAfterTemplateKeyword: true
 SpaceBeforeParens: ControlStatements
+
 IncludeBlocks: Regroup
 IncludeCategories:
-  - Regex: '^<[a-z_]+>'
+  - Regex: "^<[a-z_]+>"
     Priority: 1
-  - Regex: '^<.+>'
+  - Regex: "^<.+>"
     Priority: 2
-  - Regex: '^"'
+  - Regex: "^\""
     Priority: 3
-SortIncludes: CaseInsensitive
+SortIncludes:
+  Enabled: true
+  IgnoreCase: true
 
 AlignTrailingComments:
   Kind: Never

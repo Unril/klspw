@@ -36,6 +36,8 @@ using std::set;
 using std::size_t;
 using std::string;
 using std::string_view;
+using std::unordered_map;
+using std::unordered_set;
 using std::variant;
 using std::vector;
 
@@ -90,9 +92,7 @@ inline string join(R&& parts, string_view sep = " ") {
     return std::forward<R>(parts) | v::join_with(sep) | r::to<string>();
 }
 
-inline string join(std::initializer_list<string_view> parts, string_view sep = " ") {
-    return join<>(parts, sep);
-}
+inline string join(std::initializer_list<string_view> parts, string_view sep = " ") { return join<>(parts, sep); }
 
 // --- Preconditions ---
 

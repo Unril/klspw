@@ -51,9 +51,7 @@ TEST_CASE("throws on missing KLSPW_END") {
     CHECK_THROWS_AS((void)klspw::extract_gradle_json("KLSPW_BEGIN\n{}\n"), std::runtime_error);
 }
 
-TEST_CASE("throws on empty input") {
-    CHECK_THROWS_AS((void)klspw::extract_gradle_json(""), std::runtime_error);
-}
+TEST_CASE("throws on empty input") { CHECK_THROWS_AS((void)klspw::extract_gradle_json(""), std::runtime_error); }
 
 // --- parse_gradle_output ---
 
@@ -755,13 +753,13 @@ TEST_CASE("WorkspaceData::merge combines modules and deduplicates libraries") {
     klspw::WorkspaceData ws1{
         .modules = {{.name = "mod-a"}},
         .libraries = {{.name = "shared-lib", .roots = {{.path = "/a/shared.jar"}}},
-                      {.name = "only-a", .roots = {{.path = "/a/only-a.jar"}}}},
+            {.name = "only-a", .roots = {{.path = "/a/only-a.jar"}}}},
     };
 
     klspw::WorkspaceData ws2{
         .modules = {{.name = "mod-b"}},
         .libraries = {{.name = "shared-lib", .roots = {{.path = "/b/shared.jar"}}},
-                      {.name = "only-b", .roots = {{.path = "/b/only-b.jar"}}}},
+            {.name = "only-b", .roots = {{.path = "/b/only-b.jar"}}}},
     };
 
     ws1.merge(std::move(ws2));

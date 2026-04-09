@@ -43,8 +43,11 @@ class ProcessRunner {
         require(!wait_ec, "Failed waiting for process: {}\n  Command: {}", wait_ec, cmd);
 
         spdlog::debug("exec done: exit={}, stdout={} bytes", status, stdout_output.size());
-        require(status == 0, "Process exited with code {}\n  Command: {}\n  Output: {:.500}", status, cmd,
-                stdout_output);
+        require(status == 0,
+            "Process exited with code {}\n  Command: {}\n  Output: {:.500}",
+            status,
+            cmd,
+            stdout_output);
 
         return stdout_output;
     }

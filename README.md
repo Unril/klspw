@@ -2,7 +2,7 @@
 
 Generate `workspace.json` for [kotlin-lsp] from Gradle builds.
 
-Targets repositories where the default kotlin-lsp project import does not work -- when the build runs through a wrapper around Gradle, or when dependencies come from custom package/cache layouts.
+Targets repositories where the default kotlin-lsp project import does not work -- when the build runs through a wrapper around Gradle, or when dependencies come from custom package or cache layouts.
 
 ## Quick start
 
@@ -15,15 +15,30 @@ just check                        # configure + build + test
 ## Usage
 
 ```bash
-klspw -c config.yaml generate   # run Gradle, write workspace.json
-klspw -c config.yaml inspect    # run Gradle, log discovered modules/libraries
-klspw -c config.yaml validate   # check config paths and build commands
-klspw --log-level debug -c config.yaml generate  # verbose output
+# Generate a starter config for a Gradle root
+klspw init ./my-project
+klspw init ./my-project -c config.yaml  # write to file instead of stdout
+
+# Run Gradle and write workspace.json
+klspw -c config.yaml generate
+
+# Inspect discovered modules and libraries without writing
+klspw -c config.yaml inspect
+
+# Validate config paths and build commands
+klspw -c config.yaml validate
+
+# Save raw Gradle output for debugging
+klspw -c config.yaml generate --save-gradle-output ./debug/
+klspw -c config.yaml generate --save-gradle-output output.txt
+
+# Verbose logging
+klspw --log-level debug -c config.yaml generate
 ```
 
 ## Configuration
 
-Config file: `workspace-kotlin-lsp-config.yaml`
+Config file (default name: `klspw.yaml`):
 
 ```yaml
 version: 1
@@ -37,8 +52,9 @@ build:
 roots:
   - path: ./src/my-service
   - path: ./src/other-service
-    command: ["gradle"]
-    gradle_args: ["--no-daemon"]
+    build:
+      command: ["gradle"]
+      gradle_args: ["--no-daemon"]
 
 options:
   include_tests: true
@@ -47,19 +63,21 @@ options:
 ```
 
 - `build` sets the default Gradle command for all roots
-- Each root can override `command` and `gradle_args`
-- Paths are resolved relative to the config file directory
-- `options.include_tests` controls whether test source sets appear in the workspace
+- Each root can override `build` with its own `command` and `gradle_args`
+- Paths resolve relative to the config file directory
+- `include_tests` controls whether test source sets appear in the workspace
+- `attach_sources` discovers and attaches source jars to libraries (Gradle-resolved source jars and package cache layouts)
 
 ## How it works
 
 1. Read config, validate paths
 2. For each root, run the configured Gradle command with a temporary init script
-3. Extract JSON between `KLSPW_BEGIN`/`KLSPW_END` delimiters in Gradle stdout
-4. Parse source sets, classpaths, and project metadata
-5. Convert to kotlin-lsp workspace model (modules, libraries, kotlin settings)
-6. Merge results across roots, deduplicating libraries by name
-7. Write deterministic, pretty-printed `workspace.json`
+3. The init script dumps project metadata as JSON between `KLSPW_BEGIN`/`KLSPW_END` delimiters, including Gradle-resolved source jar mappings
+4. Parse source sets, classpaths, and project structure from the JSON output
+5. Attach source jars to libraries (from Gradle resolution, then filesystem discovery as fallback)
+6. Convert to kotlin-lsp workspace model (modules, libraries, kotlin settings)
+7. Merge results across roots, deduplicating libraries by name
+8. Write deterministic, pretty-printed `workspace.json`
 
 ## Project structure
 
@@ -72,18 +90,22 @@ include/
   workspace_model.hpp   # kotlin-lsp workspace.json schema types
   pipeline.hpp          # Pipeline: orchestrates generate/inspect commands
   process.hpp           # ProcessRunner: subprocess execution via reproc++
+  sources.hpp           # source jar/directory discovery for library attachment
 src/
   main.cpp              # CLI entry point (CLI11)
   common.cpp            # file I/O and string utilities
 test/
-  test_common.hpp       # shared RAII test fixtures
+  test_common.hpp       # shared RAII test fixtures (TempDir, TempConfig)
   smoke.cpp             # basic smoke tests
-  config_test.cpp       # config loading and validation
+  config_test.cpp       # config loading tests
+  config_validate_test.cpp  # config validation tests
+  config_save_test.cpp  # config YAML round-trip and make_starter tests
   gradle_test.cpp       # Gradle parsing + workspace conversion
   workspace_json_test.cpp  # workspace model round-trip serialization
   common_test.cpp       # utility function tests
   process_test.cpp      # subprocess execution tests
-  pipeline_test.cpp     # config validation tests
+  sources_test.cpp      # source discovery tests
+  integration_test.cpp  # end-to-end tests with real Gradle projects
 resources/
   init.gradle.kts       # Gradle init script (embedded at build time)
 ```
@@ -95,6 +117,9 @@ just configure   # cmake --preset dev
 just build       # cmake --build --preset dev
 just test        # ctest --preset dev
 just check       # all three
+
+# Integration tests (requires Gradle on PATH)
+just integration
 ```
 
 ## Dependencies

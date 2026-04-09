@@ -28,9 +28,7 @@ namespace klspw {
 
 /// Derive a library name from a jar path.
 /// E.g., "/cache/kotlin-stdlib-2.0.0.jar" -> "kotlin-stdlib-2.0.0".
-inline string library_name_for_jar(string_view jar) {
-    return fs::path{jar}.stem().string();
-}
+inline string library_name_for_jar(string_view jar) { return fs::path{jar}.stem().string(); }
 
 // --- SourceSet ---
 
@@ -231,8 +229,10 @@ inline constexpr string_view gradle_end_delimiter = "KLSPW_END";
 
 inline string extract_gradle_json(string_view raw_output) {
     auto result = extract_between(raw_output, {.open = gradle_begin_delimiter, .close = gradle_end_delimiter});
-    require(result.has_value(), "{}/{} delimiters not found in Gradle output", gradle_begin_delimiter,
-            gradle_end_delimiter);
+    require(result.has_value(),
+        "{}/{} delimiters not found in Gradle output",
+        gradle_begin_delimiter,
+        gradle_end_delimiter);
     return std::move(*result);
 }
 

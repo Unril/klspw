@@ -28,12 +28,8 @@ void assert_round_trip(const std::string& path) {
 
 } // namespace
 
-TEST_CASE("round-trip root workspace") {
-    assert_round_trip("test/fixtures/example_root_workspace.json");
-}
-TEST_CASE("round-trip proj workspace") {
-    assert_round_trip("test/fixtures/example_proj_workspace.json");
-}
+TEST_CASE("round-trip root workspace") { assert_round_trip("test/fixtures/example_root_workspace.json"); }
+TEST_CASE("round-trip proj workspace") { assert_round_trip("test/fixtures/example_proj_workspace.json"); }
 
 TEST_CASE("root workspace structure") {
     const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file("test/fixtures/example_root_workspace.json"));
@@ -85,13 +81,9 @@ TEST_CASE("proj workspace structure") {
     CHECK(ws.sdks.empty());
     CHECK(ws.kotlin_settings.empty());
 
-    SUBCASE("module has type") {
-        CHECK(ws.modules[0].type == "JAVA_MODULE");
-    }
+    SUBCASE("module has type") { CHECK(ws.modules[0].type == "JAVA_MODULE"); }
 
-    SUBCASE("library has level") {
-        CHECK(ws.libraries[0].level == "project");
-    }
+    SUBCASE("library has level") { CHECK(ws.libraries[0].level == "project"); }
 
     SUBCASE("library root has inclusion_options") {
         using std::ranges::any_of;
@@ -103,8 +95,10 @@ TEST_CASE("proj workspace structure") {
 }
 
 TEST_CASE("DependencyScope round-trips") {
-    for (auto scope : {klspw::DependencyScope::compile, klspw::DependencyScope::test, klspw::DependencyScope::runtime,
-                       klspw::DependencyScope::provided}) {
+    for (auto scope : {klspw::DependencyScope::compile,
+             klspw::DependencyScope::test,
+             klspw::DependencyScope::runtime,
+             klspw::DependencyScope::provided}) {
         CAPTURE(scope);
         CHECK(from_json<klspw::DependencyScope>(to_json(scope)) == scope);
     }
@@ -151,8 +145,10 @@ TEST_CASE("SdkDep round-trips") {
 }
 
 TEST_CASE("XmlElement round-trips") {
-    const klspw::XmlElement elem{
-        .tag = "root", .attributes = {{"key", "val"}}, .children = {{.tag = "child"}}, .text = "hello"};
+    const klspw::XmlElement elem{.tag = "root",
+        .attributes = {{"key", "val"}},
+        .children = {{.tag = "child"}},
+        .text = "hello"};
     const auto parsed = from_json<klspw::XmlElement>(to_json(elem));
     CHECK(parsed.tag == "root");
     CHECK(parsed.attributes.at("key") == "val");

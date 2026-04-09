@@ -29,7 +29,7 @@ build:
 roots:
   - path: {}
 )",
-                                  root_dir.path.string());
+        root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
@@ -43,7 +43,7 @@ version: 1
 roots:
   - path: {}
 )",
-                                  root_dir.path.string());
+        root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
@@ -59,7 +59,7 @@ roots:
     build:
       command: ["./gradlew"]
 )",
-                                  root_dir.path.string());
+        root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);
@@ -76,7 +76,7 @@ build:
 roots:
   - path: {}
 )",
-                                  root_dir.path.string());
+        root_dir.path.string());
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::from_yaml(tmp.path);

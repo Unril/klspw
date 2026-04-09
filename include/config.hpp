@@ -126,8 +126,10 @@ class Config {
         spdlog::debug("Loading config: {}", resolved.string());
         auto data = ConfigData::from_yaml(read_file(resolved));
         auto cfg = Config{std::move(data), resolved};
-        spdlog::debug("Config loaded: {} root(s), jvm_target={}, workspace_file={}", cfg.roots().size(),
-                      cfg.jvm_target(), cfg.data_.workspace_file.empty() ? "(not set)" : cfg.data_.workspace_file);
+        spdlog::debug("Config loaded: {} root(s), jvm_target={}, workspace_file={}",
+            cfg.roots().size(),
+            cfg.jvm_target(),
+            cfg.data_.workspace_file.empty() ? "(not set)" : cfg.data_.workspace_file);
         return cfg;
     }
 
@@ -139,8 +141,8 @@ class Config {
 
     /// Build a starter ConfigData for a single Gradle root.
     /// root_path is resolved relative to config_dir. Both paths are canonicalized internally.
-    static ConfigData make_starter(const fs::path& root_path, const fs::path& config_dir,
-                                   const string& jvm_target = "21") {
+    static ConfigData
+    make_starter(const fs::path& root_path, const fs::path& config_dir, const string& jvm_target = "21") {
         require(fs::is_directory(root_path), "root_path must be an existing directory: {}", root_path);
         const auto abs_root = fs::weakly_canonical(root_path);
         const auto abs_cfg = fs::weakly_canonical(config_dir);

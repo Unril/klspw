@@ -6,9 +6,7 @@
 
 namespace {
 
-klspw::ConfigData parse_config_yaml(const std::string& yaml) {
-    return klspw::ConfigData::from_yaml(yaml);
-}
+klspw::ConfigData parse_config_yaml(const std::string& yaml) { return klspw::ConfigData::from_yaml(yaml); }
 
 } // namespace
 
@@ -55,7 +53,7 @@ TEST_CASE("to_yaml with per-root build overrides round-trips") {
             {
                 {.path = "./proj_a"},
                 {.path = "./proj_b",
-                 .build = klspw::BuildConfig{.command = {"gradle"}, .gradle_args = {"--no-daemon"}}},
+                    .build = klspw::BuildConfig{.command = {"gradle"}, .gradle_args = {"--no-daemon"}}},
             },
     };
 
@@ -107,7 +105,8 @@ TEST_CASE("make_starter output passes ConfigData::validate") {
 
 TEST_CASE("make_starter throws on nonexistent root") {
     CHECK_THROWS_WITH_AS(klspw::Config::make_starter("/tmp/klspw_nonexistent_dir_xyz", "/tmp"),
-                         doctest::Contains("must be an existing directory"), std::runtime_error);
+        doctest::Contains("must be an existing directory"),
+        std::runtime_error);
 }
 
 // --- End-to-end: make_starter -> to_yaml -> from_yaml ---

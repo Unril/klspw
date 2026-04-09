@@ -9,9 +9,9 @@
 ///      directory (identified by a configurable marker), sources live under a
 ///      sibling directory (e.g., generic-flavor/)
 
-#include "common.hpp"
-
 #include <spdlog/spdlog.h>
+
+#include "common.hpp"
 
 namespace klspw {
 
@@ -28,7 +28,8 @@ inline constexpr string_view pkg_cache_source_dir = "generic-flavor";
 /// suffixes like "/src/main/java" work. Returns nullopt on no match or I/O errors.
 inline opt_string find_recursive(const fs::path& root, string_view suffix, bool want_dir) {
     std::error_code ec;
-    for (const auto& entry : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
+    for (const auto& entry :
+        fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
         if (want_dir ? entry.is_directory(ec) : entry.is_regular_file(ec)) {
             if (entry.path().string().ends_with(suffix)) {
                 return entry.path().string();
@@ -73,8 +74,7 @@ inline opt_string find_pkg_cache_sources(string_view jar) {
             return src;
         }
         // 4. src/main (when no java/ subdir exists -- package dirs directly in main/)
-        if (const auto p = source_root / "src" / "main";
-            fs::is_directory(p) && !fs::is_directory(p / "java")) {
+        if (const auto p = source_root / "src" / "main"; fs::is_directory(p) && !fs::is_directory(p / "java")) {
             return p.string();
         }
         // 5. Flat source tree: src/src (broad fallback)

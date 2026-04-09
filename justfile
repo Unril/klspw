@@ -19,6 +19,10 @@ rebuild: clean configure build
 run *args: build
     ./build/{{ preset }}/klspw {{ args }}
 
+# Format all C++ source and header files with clang-format
+format:
+    find include src test -name '*.hpp' -o -name '*.cpp' | xargs clang-format -i
+
 # Integration tests (requires Gradle on PATH)
 integration-configure:
     cmake --preset {{ preset }} -DENABLE_INTEGRATION_TESTS=ON

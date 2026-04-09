@@ -17,9 +17,12 @@ struct LogLevel {
 };
 
 constexpr std::array log_levels = {
-    LogLevel{.name = "trace", .level = spdlog::level::trace}, LogLevel{.name = "debug", .level = spdlog::level::debug},
-    LogLevel{.name = "info", .level = spdlog::level::info},   LogLevel{.name = "warn", .level = spdlog::level::warn},
-    LogLevel{.name = "error", .level = spdlog::level::err},   LogLevel{.name = "off", .level = spdlog::level::off},
+    LogLevel{.name = "trace", .level = spdlog::level::trace},
+    LogLevel{.name = "debug", .level = spdlog::level::debug},
+    LogLevel{.name = "info", .level = spdlog::level::info},
+    LogLevel{.name = "warn", .level = spdlog::level::warn},
+    LogLevel{.name = "error", .level = spdlog::level::err},
+    LogLevel{.name = "off", .level = spdlog::level::off},
 };
 
 std::set<std::string> log_level_names() {
@@ -60,8 +63,9 @@ int main(int argc, char* argv[]) try {
 
     std::string gradle_output_path;
     for (auto* sub : {gen, insp}) {
-        sub->add_option("--save-gradle-output", gradle_output_path,
-                        "Save raw Gradle output to a file (path) or directory (uses default filename per root)");
+        sub->add_option("--save-gradle-output",
+            gradle_output_path,
+            "Save raw Gradle output to a file (path) or directory (uses default filename per root)");
     }
 
     CLI11_PARSE(app, argc, argv);

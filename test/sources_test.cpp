@@ -13,9 +13,7 @@ static void touch(const fs::path& p) {
 }
 
 // Helper: create a directory (and parents).
-static void mkdirs(const fs::path& p) {
-    fs::create_directories(p);
-}
+static void mkdirs(const fs::path& p) { fs::create_directories(p); }
 
 // --- find_sibling_source_jar ---
 

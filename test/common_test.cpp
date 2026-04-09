@@ -44,9 +44,7 @@ TEST_CASE("trim with only whitespace characters") {
     CHECK(trim("\r\n") == "");
 }
 
-TEST_CASE("trim with tabs is not trimmed") {
-    CHECK(trim("\thello\t") == "\thello\t");
-}
+TEST_CASE("trim with tabs is not trimmed") { CHECK(trim("\thello\t") == "\thello\t"); }
 
 TEST_CASE("join with empty strings in parts") {
     CHECK(join({"", "b", ""}) == " b ");
@@ -102,9 +100,7 @@ TEST_CASE("extract_between with same open and close delimiter") {
     CHECK(extract_between("| hello |", {"|", "|"}) == "hello");
 }
 
-TEST_CASE("extract_between with overlapping delimiter text") {
-    CHECK(extract_between("aabaa", {"aa", "aa"}) == "b");
-}
+TEST_CASE("extract_between with overlapping delimiter text") { CHECK(extract_between("aabaa", {"aa", "aa"}) == "b"); }
 
 // --- unique_by ---
 
@@ -189,14 +185,13 @@ TEST_CASE("write_file throws on empty path") {
 
 TEST_CASE("read_file throws on nonexistent file") {
     CHECK_THROWS_WITH_AS(klspw::read_file("/tmp/klspw_nonexistent_file_xyz.txt"),
-                         doctest::Contains("Cannot determine file size"), std::runtime_error);
+        doctest::Contains("Cannot determine file size"),
+        std::runtime_error);
 }
 
 // --- require ---
 
-TEST_CASE("require does not throw when condition is true") {
-    CHECK_NOTHROW(klspw::require(true, "should not throw"));
-}
+TEST_CASE("require does not throw when condition is true") { CHECK_NOTHROW(klspw::require(true, "should not throw")); }
 
 TEST_CASE("require throws when condition is false") {
     CHECK_THROWS_AS(klspw::require(false, "expected failure"), std::runtime_error);
@@ -208,7 +203,8 @@ TEST_CASE("require formats message with args") {
 
 TEST_CASE("require auto-converts fs::path") {
     CHECK_THROWS_WITH_AS(klspw::require(false, "path: {}", std::filesystem::path{"/tmp/test"}),
-                         doctest::Contains("/tmp/test"), std::runtime_error);
+        doctest::Contains("/tmp/test"),
+        std::runtime_error);
 }
 
 TEST_CASE("require evaluates callable lazily") {

@@ -25,8 +25,9 @@ TEST_CASE("error message includes exit code and command") {
 }
 
 TEST_CASE("error message includes stdout from failing command") {
-    CHECK_THROWS_WITH_AS(ProcessRunner({"sh", "-c", "echo oops && exit 1"}).run(), doctest::Contains("oops"),
-                         std::runtime_error);
+    CHECK_THROWS_WITH_AS(ProcessRunner({"sh", "-c", "echo oops && exit 1"}).run(),
+        doctest::Contains("oops"),
+        std::runtime_error);
 }
 
 TEST_CASE("throws on nonexistent command") {

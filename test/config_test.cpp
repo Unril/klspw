@@ -128,7 +128,8 @@ version: 1
 
 TEST_CASE("throws on nonexistent file") {
     CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml("/tmp/klspw_nonexistent_config.yaml"),
-                         doctest::Contains("not found"), std::runtime_error);
+        doctest::Contains("not found"),
+        std::runtime_error);
 }
 
 TEST_CASE("reads custom jvm_target") {
