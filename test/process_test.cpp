@@ -63,3 +63,19 @@ TEST_CASE("args() returns the command") {
     REQUIRE(runner.args().size() == 2);
     CHECK(runner.args()[0] == "echo");
 }
+
+TEST_CASE("runs command in specified working directory") {
+    auto output = ProcessRunner({"pwd"}, "/tmp").run();
+    // macOS: /tmp -> /private/tmp
+    CHECK(trim(output).ends_with("/tmp"));
+}
+
+TEST_CASE("cwd accessor returns the working directory") {
+    const ProcessRunner runner({"echo"}, "/tmp");
+    CHECK(runner.cwd() == "/tmp");
+}
+
+TEST_CASE("cwd defaults to empty") {
+    const ProcessRunner runner({"echo"});
+    CHECK(runner.cwd().empty());
+}

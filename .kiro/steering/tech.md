@@ -64,6 +64,12 @@ just coverage       # build + run + merge + report + html
 - Fixtures in `test/fixtures/` (YAML configs, JSON outputs)
 - RAII test helpers for temp files/dirs in a shared test header
 - Tests run from the source directory (working directory set in CMake)
+- Integration tests require Gradle on PATH and network access; gated behind `ENABLE_INTEGRATION_TESTS` CMake option
+
+```bash
+# Integration tests
+just integration    # configure with flag + build + run integration label
+```
 
 ## Serialization conventions
 

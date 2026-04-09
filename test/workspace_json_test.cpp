@@ -28,8 +28,12 @@ void assert_round_trip(const std::string& path) {
 
 } // namespace
 
-TEST_CASE("round-trip root workspace") { assert_round_trip("test/fixtures/example_root_workspace.json"); }
-TEST_CASE("round-trip proj workspace") { assert_round_trip("test/fixtures/example_proj_workspace.json"); }
+TEST_CASE("round-trip root workspace") {
+    assert_round_trip("test/fixtures/example_root_workspace.json");
+}
+TEST_CASE("round-trip proj workspace") {
+    assert_round_trip("test/fixtures/example_proj_workspace.json");
+}
 
 TEST_CASE("root workspace structure") {
     const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file("test/fixtures/example_root_workspace.json"));
@@ -43,7 +47,7 @@ TEST_CASE("root workspace structure") {
     SUBCASE("module") {
         const auto& m = ws.modules[0];
         CHECK(m.name == "MyKotlinService-1.0");
-        CHECK_FALSE(m.type.has_value());
+        CHECK(m.type == "JAVA_MODULE");
         CHECK_FALSE(m.dependencies.empty());
         CHECK_FALSE(m.content_roots.empty());
     }
@@ -54,9 +58,15 @@ TEST_CASE("root workspace structure") {
         bool has_isdk = false;
         bool has_msrc = false;
         for (const auto& d : deps) {
-            if (std::holds_alternative<klspw::LibraryDep>(d)) { has_lib = true; }
-            if (std::holds_alternative<klspw::InheritedSdk>(d)) { has_isdk = true; }
-            if (std::holds_alternative<klspw::ModuleSource>(d)) { has_msrc = true; }
+            if (std::holds_alternative<klspw::LibraryDep>(d)) {
+                has_lib = true;
+            }
+            if (std::holds_alternative<klspw::InheritedSdk>(d)) {
+                has_isdk = true;
+            }
+            if (std::holds_alternative<klspw::ModuleSource>(d)) {
+                has_msrc = true;
+            }
         }
         CHECK(has_lib);
         CHECK(has_isdk);
@@ -90,32 +100,25 @@ TEST_CASE("proj workspace structure") {
     CHECK(ws.kotlin_settings.empty());
 
     SUBCASE("module has type") {
-        CHECK(ws.modules[0].type.value() == "JAVA_MODULE");
+        CHECK(ws.modules[0].type == "JAVA_MODULE");
     }
 
     SUBCASE("library has level") {
-        CHECK(ws.libraries[0].level.value() == "project");
+        CHECK(ws.libraries[0].level == "project");
     }
 
     SUBCASE("library root has inclusion_options") {
-        bool found = false;
-        for (const auto& lib : ws.libraries) {
-            for (const auto& root : lib.roots) {
-                if (root.inclusion_options) {
-                    CHECK(root.inclusion_options.value() == "root_itself");
-                    found = true;
-                    break;
-                }
-            }
-            if (found) { break; }
-        }
+        using std::ranges::any_of;
+        const bool found = any_of(ws.libraries, [](const auto& lib) {
+            return any_of(lib.roots, [](const auto& root) { return root.inclusion_options == "root_itself"; });
+        });
         CHECK(found);
     }
 }
 
 TEST_CASE("DependencyScope round-trips") {
-    for (auto scope : {klspw::DependencyScope::compile, klspw::DependencyScope::test,
-                       klspw::DependencyScope::runtime, klspw::DependencyScope::provided}) {
+    for (auto scope : {klspw::DependencyScope::compile, klspw::DependencyScope::test, klspw::DependencyScope::runtime,
+                       klspw::DependencyScope::provided}) {
         CHECK(from_json<klspw::DependencyScope>(to_json(scope)) == scope);
     }
 }
@@ -142,8 +145,8 @@ TEST_CASE("DependencyData variant round-trips") {
 }
 
 TEST_CASE("ModuleDep round-trips") {
-    const klspw::DependencyData d = klspw::ModuleDep{
-        .name = "core", .scope = klspw::DependencyScope::test, .isExported = true, .isTestJar = true};
+    const klspw::DependencyData d =
+        klspw::ModuleDep{.name = "core", .scope = klspw::DependencyScope::test, .isExported = true, .isTestJar = true};
     const auto json_str = to_json(d);
     CHECK(json_str.contains("\"type\":\"module\""));
 
@@ -161,7 +164,8 @@ TEST_CASE("SdkDep round-trips") {
 }
 
 TEST_CASE("XmlElement round-trips") {
-    const klspw::XmlElement elem{.tag = "root", .attributes = {{"key", "val"}}, .children = {{.tag = "child"}}, .text = "hello"};
+    const klspw::XmlElement elem{
+        .tag = "root", .attributes = {{"key", "val"}}, .children = {{.tag = "child"}}, .text = "hello"};
     const auto parsed = from_json<klspw::XmlElement>(to_json(elem));
     CHECK(parsed.tag == "root");
     CHECK(parsed.attributes.at("key") == "val");
@@ -183,7 +187,9 @@ TEST_CASE("ContentRootData round-trips") {
 
 TEST_CASE("SdkData round-trips") {
     const klspw::SdkData sdk{
-        .name = "JDK21", .type = "JavaSDK", .version = "21",
+        .name = "JDK21",
+        .type = "JavaSDK",
+        .version = "21",
         .home_path = "/usr/lib/jvm/java-21",
         .roots = std::vector<klspw::SdkRootData>{{.url = "jar:///rt.jar!/", .type = "classPath"}},
         .additional_data = "extra",
@@ -195,9 +201,13 @@ TEST_CASE("SdkData round-trips") {
 
 TEST_CASE("JavaSettingsData round-trips") {
     const klspw::JavaSettingsData js{
-        .module = "mymod", .inherited_compiler_output = false, .exclude_output = false,
-        .compiler_output = "/out", .compiler_output_for_tests = "/test-out",
-        .language_level_id = "JDK_21", .manifest_attributes = {{"Main-Class", "com.example.Main"}},
+        .module = "mymod",
+        .inherited_compiler_output = false,
+        .exclude_output = false,
+        .compiler_output = "/out",
+        .compiler_output_for_tests = "/test-out",
+        .language_level_id = "JDK_21",
+        .manifest_attributes = {{"Main-Class", "com.example.Main"}},
     };
     const auto parsed = from_json<klspw::JavaSettingsData>(to_json(js));
     CHECK(parsed.module == "mymod");
@@ -209,7 +219,8 @@ TEST_CASE("JavaSettingsData round-trips") {
 
 TEST_CASE("LibraryData with properties round-trips") {
     const klspw::LibraryData lib{
-        .name = "mylib", .type = "java-imported",
+        .name = "mylib",
+        .type = "java-imported",
         .roots = {{.path = "/lib.jar"}},
         .excluded_roots = {"/excluded"},
         .properties = klspw::XmlElement{.tag = "properties"},

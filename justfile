@@ -19,6 +19,16 @@ rebuild: clean configure build
 run *args: build
     ./build/{{ preset }}/klspw {{ args }}
 
+# Integration tests (requires Gradle on PATH)
+integration-configure:
+    cmake --preset {{ preset }} -DENABLE_INTEGRATION_TESTS=ON
+
+integration-build: integration-configure
+    cmake --build --preset {{ preset }}
+
+integration: integration-build
+    ctest --preset {{ preset }} -L integration
+
 # --- Coverage (clang source-based, isolated build dir) ---
 # Usage: just coverage
 # Requires: llvm-profdata, llvm-cov (same LLVM toolchain as clang++)

@@ -1,6 +1,8 @@
 # Build
 build/
 .cache/
+.gradle/
+.kotlin/
 compile_commands.json
 default.profraw
 

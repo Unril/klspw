@@ -20,10 +20,8 @@ TEST_CASE("DependencyData variant holds correct types") {
     CHECK(std::holds_alternative<klspw::SdkDep>(sdk));
 }
 
-TEST_CASE("ModuleData type is optional") {
+TEST_CASE("ModuleData type has default") {
     klspw::ModuleData m;
     m.name = "mymod";
-    CHECK_FALSE(m.type.has_value());
-    m.type = "JAVA_MODULE";
-    CHECK(m.type.value() == "JAVA_MODULE");
+    CHECK(m.type == "JAVA_MODULE");
 }

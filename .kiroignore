@@ -1,6 +1,8 @@
 # Build artifacts — large and not useful for agent context
 build/
 vcpkg_installed/
+.gradle/
+.kotlin/
 
 # But keep C/C++ headers and sources accessible from vcpkg
 !build/dev/vcpkg_installed/

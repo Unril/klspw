@@ -80,15 +80,35 @@ class Pipeline {
         const auto build = cfg_.build_for(root);
         const auto root_path = cfg_.root_path(root);
         spdlog::info("Processing root: {}", root_path.string());
+        spdlog::debug("  build command: {}", join(build.command));
+        spdlog::debug("  gradle args: {}", build.gradle_args.empty() ? "(none)" : join(build.gradle_args));
 
         const auto raw_output = run_gradle_(build, root_path);
-        spdlog::debug("Gradle output: {} bytes", raw_output.size());
+        spdlog::debug("  Gradle raw output: {} bytes", raw_output.size());
 
         const auto json_str = extract_gradle_json(raw_output);
+        spdlog::debug("  extracted JSON: {} bytes", json_str.size());
+
         const auto build_output = parse_gradle_output(json_str);
         spdlog::info("  {} project(s), {} active", build_output.projects.size(), build_output.active_project_count());
 
-        return build_output.to_workspace(cfg_.compiler_arguments_json(), cfg_.options());
+        for (const auto& proj : build_output.projects) {
+            if (proj.is_skipped()) {
+                spdlog::debug("  project {} [SKIPPED: {}]", proj.project_path, *proj.skip_reason);
+            } else {
+                spdlog::debug("  project {} ({} source set(s), {} plugin(s))", proj.project_path,
+                              proj.source_sets.size(), proj.plugins.size());
+                for (const auto& ss : proj.source_sets) {
+                    spdlog::debug("    source set '{}': {} source root(s), {} compile classpath jar(s)", ss.name,
+                                  ss.source_roots.size(), ss.compile_classpath.size());
+                }
+            }
+        }
+
+        const auto ws = build_output.to_workspace(cfg_.compiler_arguments_json(), cfg_.options());
+        spdlog::debug("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)", ws.modules.size(),
+                      ws.libraries.size(), ws.kotlin_settings.size());
+        return ws;
     }
 
     Config cfg_;

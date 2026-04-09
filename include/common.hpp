@@ -58,8 +58,9 @@ template <typename T = void> constexpr auto to_vector() {
 
 // --- Glaze opts ---
 
-/// Write opts: skip null optionals, pretty-print for diffable output.
+/// Write opts: write null optionals as null (kotlin-lsp requires them), pretty-print for diffable output.
 struct ws_write_opts_t : glz::opts {
+    bool skip_null_members = false;
     bool prettify = true;
     uint8_t indentation_width = 2;
 };

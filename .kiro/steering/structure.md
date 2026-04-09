@@ -11,6 +11,7 @@ klspw/
     common.cpp       # File I/O and string utilities
   test/              # One test binary per file, shared RAII fixtures in a common header
     fixtures/        # Test data (YAML configs, JSON outputs)
+      projects/      # Real Gradle projects for integration tests (simple, with-deps, multi, multi-root)
   resources/
     init.gradle.kts  # Gradle init script (embedded at build time via configure_file)
 ```

@@ -76,7 +76,7 @@ struct SourceSet {
     }
 
     static LibraryData library_from_jar(string_view jar) {
-        return {.name = library_name_for_jar(jar), .roots = {{.path = string{jar}}}};
+        return {.name = library_name_for_jar(jar), .type = "java-imported", .roots = {{.path = string{jar}}}};
     }
 
     LibraryDep library_dep_from_jar(string_view jar) const {
@@ -155,7 +155,6 @@ struct GradleProject {
     ModuleData to_module(const vector<SourceSet>& sets) const {
         return {
             .name = module_name(),
-            .type = "JAVA_MODULE",
             .dependencies = module_dependencies(sets),
             .content_roots = module_content_roots(sets),
         };

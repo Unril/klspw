@@ -251,3 +251,27 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/config_save_test.c
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endif()
+
+# Integration tests -- require Gradle on the machine and network access.
+# Opt-in via: cmake --preset dev -DENABLE_INTEGRATION_TESTS=ON
+option(ENABLE_INTEGRATION_TESTS "Build integration tests (requires Gradle)" OFF)
+
+if(BUILD_TESTING AND ENABLE_INTEGRATION_TESTS
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/integration_test.cpp")
+    find_package(doctest CONFIG REQUIRED)
+
+    add_executable(integration_test test/integration_test.cpp)
+
+    target_link_libraries(integration_test
+        PRIVATE
+        klspw_lib
+        doctest::doctest
+        $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
+    )
+
+    add_test(NAME integration_test COMMAND integration_test)
+    set_tests_properties(integration_test PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        LABELS "integration"
+    )
+endif()

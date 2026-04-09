@@ -24,10 +24,14 @@
 ///     include_tests: false
 
 #include <glaze/yaml.hpp>
+#include <spdlog/spdlog.h>
 
 #include "common.hpp"
 
 namespace klspw {
+
+/// Gradle task name registered by the init script.
+inline constexpr string_view gradle_task = "dumpKotlinLspModel";
 
 /// Behavioral flags controlling workspace generation.
 struct GenerationOptions {
@@ -38,18 +42,21 @@ struct GenerationOptions {
 
 /// Gradle build command and extra arguments.
 ///
-/// The resulting command line is:
-///   {command...} --init-script {path} {gradle_args...} -p {root} dumpKotlinLspModel
+/// The process runs in the root project directory. The resulting command line is:
+///   {command...} --init-script {path} {gradle_args...} dumpKotlinLspModel
 struct BuildConfig {
     strings command; ///< Build tool executable and fixed args (e.g., ["./gradlew"] or ["brazil-build", "gradle"]).
     strings gradle_args; ///< Extra Gradle flags (e.g., ["--quiet", "--no-daemon"]).
 
-    strings args_for(const fs::path& root, const fs::path& init_script) const {
+    /// Build the full command-line args for a Gradle invocation.
+    /// The resulting command line is:
+    ///   {command...} --init-script {path} {gradle_args...} dumpKotlinLspModel
+    strings args_for(const fs::path& init_script) const {
         strings args;
         args.append_range(command);
         args.insert(args.end(), {"--init-script", init_script.string()});
         args.append_range(gradle_args);
-        args.insert(args.end(), {"-p", root.string(), "dumpKotlinLspModel"});
+        args.emplace_back(gradle_task);
         return args;
     }
 
@@ -102,11 +109,26 @@ struct ConfigData {
 /// Loaded and validated config. Resolves relative paths against config_dir on demand.
 class Config {
   public:
+    static constexpr string_view default_filename = "klspw.yaml";
+    static constexpr string_view default_workspace_file = "./workspace.json";
+    static constexpr string_view default_gradle_command = "./gradlew";
+
+    /// Resolve a config path: if it's a directory, append the default filename.
+    static fs::path resolve_path(const fs::path& path) {
+        return fs::is_directory(path) ? path / default_filename : path;
+    }
+
     /// Load config from a YAML file. Validates after parsing.
+    /// If config_path is a directory, appends "klspw.yaml".
     static Config from_yaml(const fs::path& config_path) {
-        require(fs::exists(config_path), "Config file not found: {}", config_path);
-        auto data = ConfigData::from_yaml(read_file(config_path));
-        return Config{std::move(data), config_path};
+        const auto resolved = resolve_path(config_path);
+        require(fs::exists(resolved), "Config file not found: {}", resolved);
+        spdlog::debug("Loading config: {}", resolved.string());
+        auto data = ConfigData::from_yaml(read_file(resolved));
+        auto cfg = Config{std::move(data), resolved};
+        spdlog::debug("Config loaded: {} root(s), jvm_target={}, workspace_file={}", cfg.roots().size(),
+                      cfg.jvm_target(), cfg.data_.workspace_file.empty() ? "(not set)" : cfg.data_.workspace_file);
+        return cfg;
     }
 
     /// Save this config's data as YAML to a file.
@@ -125,9 +147,9 @@ class Config {
         const auto rel = "./" + abs_root.lexically_relative(abs_cfg).string();
         return {
             .version = 1,
-            .workspace_file = "./workspace.json",
+            .workspace_file = string{default_workspace_file},
             .jvm_target = jvm_target,
-            .build = BuildConfig{.command = {"./gradlew"}},
+            .build = BuildConfig{.command = {string{default_gradle_command}}},
             .roots = {{.path = rel}},
         };
     }

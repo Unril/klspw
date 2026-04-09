@@ -1,0 +1,3 @@
+rootProject.name = "multi"
+
+include("lib", "app")

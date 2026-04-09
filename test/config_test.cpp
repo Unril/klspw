@@ -152,17 +152,16 @@ TEST_CASE("compiler_arguments_json formats J-prefixed JSON") {
 
 TEST_CASE("BuildConfig::args_for produces correct argument order") {
     const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const auto args = cfg.build()->args_for("/tmp/proj", "/tmp/init.gradle.kts");
+    const auto args = cfg.build()->args_for("/tmp/init.gradle.kts");
 
-    REQUIRE(args.size() == 8);
+    // mybuild gradle --init-script /tmp/init.gradle.kts --quiet dumpKotlinLspModel
+    REQUIRE(args.size() == 6);
     CHECK(args[0] == "mybuild");
     CHECK(args[1] == "gradle");
     CHECK(args[2] == "--init-script");
     CHECK(args[3] == "/tmp/init.gradle.kts");
     CHECK(args[4] == "--quiet");
-    CHECK(args[5] == "-p");
-    CHECK(args[6] == "/tmp/proj");
-    CHECK(args[7] == "dumpKotlinLspModel");
+    CHECK(args[5] == "dumpKotlinLspModel");
 }
 
 TEST_CASE("parses per-root build config without global build") {

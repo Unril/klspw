@@ -4,17 +4,18 @@
 
 #include <reproc++/drain.hpp>
 #include <reproc++/reproc.hpp>
+#include <spdlog/spdlog.h>
 
 #include "common.hpp"
 
 namespace klspw {
 
 /// Runs a subprocess, captures stdout, passes stderr through to the parent.
-/// Constructed with the command + args; run() executes and returns stdout.
-/// Throws on any failure (start, I/O, wait, or non-zero exit).
+/// Constructed with the command + args and optional working directory.
+/// run() executes and returns stdout. Throws on any failure.
 class ProcessRunner {
   public:
-    explicit ProcessRunner(strings args) : args_{std::move(args)} {}
+    explicit ProcessRunner(strings args, fs::path cwd = {}) : args_{std::move(args)}, cwd_{std::move(cwd)} {}
 
     /// Execute the process. Returns captured stdout on success.
     string run() const {
@@ -22,7 +23,13 @@ class ProcessRunner {
         reproc::options opts;
         opts.redirect.err.type = reproc::redirect::parent;
 
+        const auto cwd_str = cwd_.string();
+        if (!cwd_.empty()) {
+            opts.working_directory = cwd_str.c_str();
+        }
+
         const auto cmd = join(args_);
+        spdlog::debug("exec: {} (cwd: {})", cmd, cwd_.empty() ? "." : cwd_str);
 
         const auto start_ec = proc.start(args_, opts);
         require(!start_ec, "Failed to start process: {}\n  Command: {}", start_ec, cmd);
@@ -34,6 +41,8 @@ class ProcessRunner {
 
         const auto [status, wait_ec] = proc.wait(reproc::infinite);
         require(!wait_ec, "Failed waiting for process: {}\n  Command: {}", wait_ec, cmd);
+
+        spdlog::debug("exec done: exit={}, stdout={} bytes", status, stdout_output.size());
         require(status == 0, "Process exited with code {}\n  Command: {}\n  Output: {:.500}", status, cmd,
                 stdout_output);
 
@@ -41,9 +50,11 @@ class ProcessRunner {
     }
 
     const strings& args() const { return args_; }
+    const fs::path& cwd() const { return cwd_; }
 
   private:
     strings args_;
+    fs::path cwd_;
 };
 
 } // namespace klspw

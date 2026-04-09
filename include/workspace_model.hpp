@@ -120,7 +120,7 @@ struct FacetData {
 /// dependencies must include InheritedSdk + ModuleSource for kotlin-lsp to work correctly.
 struct ModuleData {
     string name; ///< Unique module identifier.
-    opt_string type; ///< "JAVA_MODULE" for Kotlin/Java; null defaults to same.
+    string type = "JAVA_MODULE"; ///< Module type. Default matches kotlin-lsp's default.
     vector<DependencyData> dependencies; ///< Libraries, modules, SDKs this module depends on.
     vector<ContentRootData> content_roots; ///< Root directories containing source code.
     vector<FacetData> facets; ///< Framework facets (Spring, JPA). Usually empty.
@@ -129,17 +129,20 @@ struct ModuleData {
 /// A single JAR or directory within a library's classpath.
 struct LibraryRootData {
     string path; ///< JAR file or directory path.
-    opt_string type; ///< "CLASSES" (default), "SOURCES", or "JAVADOC".
-    opt_string inclusion_options; ///< "root_itself", "archives_under_root", "archives_under_root_recursively".
+    string type = "CLASSES"; ///< "CLASSES" (default), "SOURCES", or "JAVADOC".
+    string inclusion_options =
+        "root_itself"; ///< "root_itself", "archives_under_root", "archives_under_root_recursively".
 };
 
 /// An external library (jar dependency).
 /// name must match exactly in LibraryDep references.
+/// level defaults to "project" (matching kotlin-lsp's default).
+/// module is nullable -- written as null when not set.
 struct LibraryData {
     string name; ///< Unique library identifier (e.g., "kotlin-stdlib-2.0.0").
-    opt_string level; ///< "project" (shared) or "module" (scoped).
-    opt_string module; ///< Module name if level is "module".
-    opt_string type; ///< Library classification (e.g., "repository").
+    string level = "project"; ///< "project" (shared), "module" (scoped), or "global". Default: "project".
+    opt_string module; ///< Module name if level is "module". Null if not applicable.
+    opt_string type; ///< Library classification (e.g., "java-imported"). Required by kotlin-lsp.
     vector<LibraryRootData> roots; ///< Classpath entries (CLASSES, SOURCES, JAVADOC jars).
     strings excluded_roots; ///< Paths to exclude from classpath.
     optional<XmlElement> properties; ///< Maven coordinates or other metadata as XML.
@@ -180,7 +183,7 @@ struct KotlinSettingsData {
     bool use_project_settings = false; ///< Use project-level Kotlin settings.
     strings implemented_module_names; ///< Platform implementations for multiplatform.
     strings depends_on_module_names; ///< Source set dependencies for multiplatform.
-    string_set additional_visible_module_names; ///< Cross-source-set visibility.
+    set<string> additional_visible_module_names; ///< Cross-source-set visibility (sorted for deterministic output).
     opt_string production_output_path; ///< Compiled output directory.
     opt_string test_output_path; ///< Test output directory.
     strings source_set_names; ///< Gradle source set names.

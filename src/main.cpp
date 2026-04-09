@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) try {
     std::string log_level = "warn";
 
     app.add_option("-c,--config", config_path, "Path to config YAML file");
-    app.add_option("--log-level", log_level, "Log level: trace, debug, info, warn, error, off")
+    app.add_option("-l,--log-level", log_level, "Log level: trace, debug, info, warn, error, off")
         ->default_val("warn")
         ->check(CLI::IsMember(log_level_names()));
 
@@ -65,15 +65,15 @@ int main(int argc, char* argv[]) try {
     if (init->parsed()) {
         namespace fs = std::filesystem;
         const auto root = fs::path{init_root};
-        const auto cfg_dir =
-            config_path.empty() ? fs::current_path() : fs::weakly_canonical(fs::path{config_path}).parent_path();
+        const auto cfg_path = config_path.empty() ? fs::path{} : klspw::Config::resolve_path(config_path);
+        const auto cfg_dir = cfg_path.empty() ? fs::current_path() : fs::weakly_canonical(cfg_path).parent_path();
         const auto data = klspw::Config::make_starter(root, cfg_dir, init_jvm_target);
 
-        if (config_path.empty()) {
+        if (cfg_path.empty()) {
             std::cout << data.to_yaml();
         } else {
-            klspw::write_file(config_path, data.to_yaml());
-            spdlog::info("Wrote config to {}", config_path);
+            klspw::write_file(cfg_path, data.to_yaml());
+            spdlog::info("Wrote config to {}", cfg_path.string());
         }
         return 0;
     }

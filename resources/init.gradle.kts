@@ -11,11 +11,31 @@ fun File.safeCanonicalPath(): String =
 fun Iterable<File>.toSortedPaths(): List<String> =
     map { it.safeCanonicalPath() }.distinct().sorted()
 
-fun SourceSet.toModel(): Map<String, Any?> =
-    mapOf(
+/// Discover kapt/ksp generated source directories for a source set.
+/// These are added by annotation processors but may not appear in allSource.srcDirs.
+fun Project.generatedSourceDirs(sourceSetName: String): List<String> {
+    val dirs = mutableListOf<File>()
+
+    // kapt: build/generated/source/kapt/{sourceSetName}
+    val kaptDir = file("${buildDir}/generated/source/kapt/$sourceSetName")
+    if (kaptDir.isDirectory) dirs.add(kaptDir)
+
+    // ksp: build/generated/ksp/{sourceSetName}
+    val kspDir = file("${buildDir}/generated/ksp/$sourceSetName")
+    if (kspDir.isDirectory) dirs.add(kspDir)
+
+    return dirs.toSortedPaths()
+}
+
+fun SourceSet.toModel(project: Project): Map<String, Any?> {
+    val generatedSources = project.generatedSourceDirs(name)
+    val allSourceRoots = (allSource.srcDirs.toSortedPaths() + generatedSources).distinct().sorted()
+    val allJavaRoots = (java.srcDirs.toSortedPaths() + generatedSources).distinct().sorted()
+
+    return mapOf(
         "name" to name,
-        "sourceRoots" to allSource.srcDirs.toSortedPaths(),
-        "javaSourceRoots" to java.srcDirs.toSortedPaths(),
+        "sourceRoots" to allSourceRoots,
+        "javaSourceRoots" to allJavaRoots,
         "resourcesRoots" to resources.srcDirs.toSortedPaths(),
         "classesDirs" to output.classesDirs.files.toSortedPaths(),
         "resourcesDir" to output.resourcesDir?.safeCanonicalPath(),
@@ -24,6 +44,7 @@ fun SourceSet.toModel(): Map<String, Any?> =
         "compileClasspathConfigurationName" to compileClasspathConfigurationName,
         "runtimeClasspathConfigurationName" to runtimeClasspathConfigurationName
     )
+}
 
 fun Project.detectModel(): Map<String, Any?> {
     val javaExt = extensions.findByType(JavaPluginExtension::class.java)
@@ -32,7 +53,7 @@ fun Project.detectModel(): Map<String, Any?> {
     if (javaExt != null) {
         val sourceSets = javaExt.sourceSets
             .sortedBy { it.name }
-            .map { it.toModel() }
+            .map { it.toModel(this) }
 
         return mapOf(
             "projectPath" to path,

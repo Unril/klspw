@@ -44,7 +44,9 @@ class GradleRunner {
     GradleRunner() : GradleRunner(fs::temp_directory_path() / "klspw") {}
 
     /// Explicit temp directory (for testing).
-    explicit GradleRunner(const fs::path& temp_dir) : init_script_path_{write_init_script(temp_dir)} {}
+    explicit GradleRunner(const fs::path& temp_dir) : init_script_path_{write_init_script(temp_dir)} {
+        spdlog::debug("GradleRunner: init script at {}", init_script_path_.string());
+    }
 
     ~GradleRunner() noexcept { close(); }
 
@@ -65,7 +67,7 @@ class GradleRunner {
 
     /// Run Gradle against a root directory with the given build config. Returns captured stdout.
     string operator()(const BuildConfig& build, const fs::path& root) const {
-        return ProcessRunner(build.args_for(root, init_script_path_)).run();
+        return ProcessRunner(build.args_for(init_script_path_), root).run();
     }
 
     const fs::path& init_script_path() const { return init_script_path_; }
