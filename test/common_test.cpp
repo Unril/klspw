@@ -56,68 +56,66 @@ TEST_CASE("join with empty strings in parts") {
 // --- extract_between ---
 
 TEST_CASE("extract_between finds content between delimiters") {
-    CHECK(extract_between("<<hello>>", "<<", ">>") == "hello");
-    CHECK(extract_between("noise BEGIN data END tail", "BEGIN ", " END") == "data");
+    CHECK(extract_between("<<hello>>", {"<<", ">>"}) == "hello");
+    CHECK(extract_between("noise BEGIN data END tail", {"BEGIN ", " END"}) == "data");
 }
 
 TEST_CASE("extract_between trims whitespace from result") {
-    CHECK(extract_between("<<  hello  >>", "<<", ">>") == "hello");
-    CHECK(extract_between("<<\n  content\n>>", "<<", ">>") == "content");
+    CHECK(extract_between("<<  hello  >>", {"<<", ">>"}) == "hello");
+    CHECK(extract_between("<<\n  content\n>>", {"<<", ">>"}) == "content");
 }
 
 TEST_CASE("extract_between returns nullopt when open delimiter missing") {
-    CHECK_FALSE(extract_between("no open >> here", "<<", ">>").has_value());
+    CHECK_FALSE(extract_between("no open >> here", {"<<", ">>"}).has_value());
 }
 
 TEST_CASE("extract_between returns nullopt when close delimiter missing") {
-    CHECK_FALSE(extract_between("<< no close here", "<<", ">>").has_value());
+    CHECK_FALSE(extract_between("<< no close here", {"<<", ">>"}).has_value());
 }
 
 TEST_CASE("extract_between returns nullopt on empty input") {
-    CHECK_FALSE(extract_between("", "<<", ">>").has_value());
+    CHECK_FALSE(extract_between("", {"<<", ">>"}).has_value());
 }
 
 TEST_CASE("extract_between returns empty string when delimiters are adjacent") {
-    CHECK(extract_between("<<>>", "<<", ">>") == "");
+    CHECK(extract_between("<<>>", {"<<", ">>"}) == "");
 }
 
 TEST_CASE("extract_between uses first occurrence of open delimiter") {
-    CHECK(extract_between("<< first >> << second >>", "<<", ">>") == "first");
+    CHECK(extract_between("<< first >> << second >>", {"<<", ">>"}) == "first");
 }
 
 TEST_CASE("extract_between works with single-char delimiters") {
-    CHECK(extract_between("[content]", "[", "]") == "content");
+    CHECK(extract_between("[content]", {"[", "]"}) == "content");
 }
 
 TEST_CASE("extract_between with multiline content") {
-    const auto result = extract_between("---\nBEGIN\nline1\nline2\nEND\n---", "BEGIN", "END");
+    const auto result = extract_between("---\nBEGIN\nline1\nline2\nEND\n---", {"BEGIN", "END"});
     CHECK(result == "line1\nline2");
 }
 
 TEST_CASE("extract_between when open appears but close is before open") {
-    CHECK_FALSE(extract_between("END stuff BEGIN", "BEGIN", "END").has_value());
+    CHECK_FALSE(extract_between("END stuff BEGIN", {"BEGIN", "END"}).has_value());
 }
 
 TEST_CASE("extract_between with same open and close delimiter") {
-    CHECK(extract_between("| hello |", "|", "|") == "hello");
+    CHECK(extract_between("| hello |", {"|", "|"}) == "hello");
 }
 
 TEST_CASE("extract_between with overlapping delimiter text") {
-    CHECK(extract_between("aabaa", "aa", "aa") == "b");
+    CHECK(extract_between("aabaa", {"aa", "aa"}) == "b");
 }
 
 // --- unique_by ---
 
 TEST_CASE("unique_by deduplicates by identity") {
     const std::vector<std::string> input = {"a", "b", "a", "c", "b"};
-    const auto result = klspw::unique_by(input);
-    CHECK(result == std::vector<std::string>{"a", "b", "c"});
+    CHECK((input | klspw::unique_by()) == std::vector<std::string>{"a", "b", "c"});
 }
 
 TEST_CASE("unique_by preserves first occurrence order") {
     const std::vector<int> input = {3, 1, 4, 1, 5, 9, 2, 6, 5, 3};
-    const auto result = klspw::unique_by(input);
-    CHECK(result == std::vector<int>{3, 1, 4, 5, 9, 2, 6});
+    CHECK((input | klspw::unique_by()) == std::vector<int>{3, 1, 4, 5, 9, 2, 6});
 }
 
 TEST_CASE("unique_by with projection") {
@@ -126,7 +124,7 @@ TEST_CASE("unique_by with projection") {
         int value;
     };
     const std::vector<item> input = {{"a", 1}, {"b", 2}, {"a", 3}, {"c", 4}};
-    const auto result = klspw::unique_by(input, &item::key);
+    const auto result = input | klspw::unique_by(&item::key);
     REQUIRE(result.size() == 3);
     CHECK(result[0].value == 1); // first "a" kept
     CHECK(result[1].value == 2);
@@ -135,7 +133,7 @@ TEST_CASE("unique_by with projection") {
 
 TEST_CASE("unique_by with lambda projection") {
     const std::vector<std::string> input = {"hello", "HELLO", "world", "World"};
-    const auto result = klspw::unique_by(input, [](const auto& s) {
+    const auto result = input | klspw::unique_by([](const auto& s) {
         std::string lower(s.size(), '\0');
         std::ranges::transform(s, lower.begin(), ::tolower);
         return lower;
@@ -147,12 +145,12 @@ TEST_CASE("unique_by with lambda projection") {
 
 TEST_CASE("unique_by on empty range") {
     const std::vector<int> input;
-    CHECK(klspw::unique_by(input).empty());
+    CHECK((input | klspw::unique_by()).empty());
 }
 
 TEST_CASE("unique_by on range with no duplicates") {
     const std::vector<int> input = {1, 2, 3};
-    CHECK(klspw::unique_by(input) == input);
+    CHECK((input | klspw::unique_by()) == input);
 }
 
 // --- read_file / write_file ---

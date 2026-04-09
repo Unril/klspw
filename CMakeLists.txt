@@ -21,19 +21,19 @@ configure_file(
     @ONLY
 )
 
-add_library(klspw_lib INTERFACE)
+add_library(klspw_lib STATIC src/common.cpp)
 target_include_directories(
     klspw_lib
-    INTERFACE
+    PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
-target_compile_features(klspw_lib INTERFACE cxx_std_23)
+target_compile_features(klspw_lib PUBLIC cxx_std_23)
 
 if(MSVC)
-    target_compile_options(klspw_lib INTERFACE /W4 /permissive-)
+    target_compile_options(klspw_lib PUBLIC /W4 /permissive-)
 else()
-    target_compile_options(klspw_lib INTERFACE -Wall -Wextra -Wpedantic)
+    target_compile_options(klspw_lib PUBLIC -Wall -Wextra -Wpedantic)
 endif()
 
 # Coverage instrumentation (clang source-based, opt-in).
@@ -55,7 +55,7 @@ endif()
 
 target_link_libraries(
     klspw_lib
-    INTERFACE
+    PUBLIC
         CLI11::CLI11
         glaze::glaze
         reproc++
@@ -208,6 +208,28 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/process_test.cpp")
 
     add_test(NAME process_test COMMAND process_test)
     set_tests_properties(process_test PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/pipeline_test.cpp")
+    find_package(doctest CONFIG REQUIRED)
+
+    add_executable(pipeline_test test/pipeline_test.cpp)
+
+    target_link_libraries(pipeline_test
+        PRIVATE
+        klspw_lib
+        doctest::doctest
+        $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
+    )
+
+    target_compile_definitions(pipeline_test PRIVATE
+        DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+    )
+
+    add_test(NAME pipeline_test COMMAND pipeline_test)
+    set_tests_properties(pipeline_test PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endif()

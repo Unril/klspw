@@ -15,6 +15,8 @@
 /// DependencyData uses glaze tagged variant with "type" discriminator.
 /// DependencyScope uses glaze enum serialization.
 
+#include <spdlog/spdlog.h>
+
 #include "common.hpp"
 
 namespace klspw {
@@ -270,6 +272,51 @@ struct WorkspaceData {
     vector<SdkData> sdks; ///< SDK definitions (JDK, etc.).
     vector<KotlinSettingsData> kotlinSettings; ///< Kotlin compiler settings per module.
     vector<JavaSettingsData> javaSettings; ///< Java compiler settings per module.
+
+    /// Merge another WorkspaceData into this one.
+    /// Modules, kotlinSettings, javaSettings, and sdks are appended.
+    /// Libraries are deduplicated by name (first occurrence wins).
+    void merge(WorkspaceData other) {
+        modules.append_range(std::move(other.modules));
+        kotlinSettings.append_range(std::move(other.kotlinSettings));
+        javaSettings.append_range(std::move(other.javaSettings));
+        sdks.append_range(std::move(other.sdks));
+
+        string_set existing_names;
+        existing_names.reserve(libraries.size());
+        for (const auto& lib : libraries) {
+            existing_names.insert(lib.name);
+        }
+        for (auto& lib : other.libraries) {
+            if (existing_names.insert(lib.name).second) {
+                libraries.push_back(std::move(lib));
+            }
+        }
+    }
+
+    /// Log a human-readable summary of this workspace via spdlog.
+    void log_summary() const {
+        spdlog::info("Modules ({}):", modules.size());
+        for (const auto& mod : modules) {
+            const auto lib_deps =
+                r::count_if(mod.dependencies, [](const auto& d) { return std::holds_alternative<LibraryDep>(d); });
+            spdlog::info("  {} ({} deps, {} content root(s))", mod.name, lib_deps, mod.contentRoots.size());
+            for (const auto& cr : mod.contentRoots) {
+                spdlog::info("    root: {} ({} source root(s))", cr.path, cr.sourceRoots.size());
+            }
+        }
+
+        spdlog::info("Libraries ({}):", libraries.size());
+        for (const auto& lib : libraries) {
+            spdlog::info("  {} ({} root(s))", lib.name, lib.roots.size());
+        }
+
+        spdlog::info("Kotlin settings ({}):", kotlinSettings.size());
+        for (const auto& ks : kotlinSettings) {
+            spdlog::info("  module={}, {} source root(s), {} pure-kotlin folder(s)", ks.module, ks.sourceRoots.size(),
+                         ks.pureKotlinSourceFolders.size());
+        }
+    }
 };
 
 } // namespace klspw

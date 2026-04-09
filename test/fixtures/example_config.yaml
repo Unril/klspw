@@ -7,15 +7,9 @@ build:
   gradle_args: ["--quiet"]
 
 roots:
-  - kind: kotlin_gradle
-    path: ./src/proj_1
+  - path: ./src/proj_1
 
-  - kind: kotlin_gradle
-    path: ./src/proj_3
-
-  - kind: java_binary
-    path: ./src/proj_4
-    lib_dir: build/lib
+  - path: ./src/proj_3
 
 options:
   include_tests: false

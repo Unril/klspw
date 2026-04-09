@@ -3,10 +3,10 @@
 /// Shared type aliases, namespace imports, string utilities, and glaze opts.
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint> // IWYU pragma: keep
 #include <filesystem> // IWYU pragma: keep
 #include <format>
-#include <fstream>
 #include <functional>
 #include <map>
 #include <optional>
@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -47,6 +48,16 @@ namespace fs = std::filesystem;
 
 using strings = vector<string>;
 using opt_string = optional<string>;
+using string_set = std::unordered_set<string>;
+
+/// Pipe adaptor: range | to_vector() materializes into a vector.
+template <typename T = void> constexpr auto to_vector() {
+    if constexpr (std::is_void_v<T>) {
+        return r::to<vector>();
+    } else {
+        return r::to<vector<T>>();
+    }
+}
 
 // --- Glaze opts ---
 
@@ -55,6 +66,7 @@ struct ws_write_opts_t : glz::opts {
     bool prettify = true;
     uint8_t indentation_width = 2;
 };
+
 inline constexpr ws_write_opts_t ws_write_opts{};
 
 /// Read opts: ignore unknown keys for forward-compat.
@@ -77,8 +89,7 @@ inline string_view trim(string_view sv) {
 template <r::input_range R>
     requires std::convertible_to<r::range_value_t<R>, string_view>
 inline string join(R&& parts, string_view sep = " ") {
-    auto view = std::forward<R>(parts) | v::join_with(sep);
-    return {std::from_range, view};
+    return std::forward<R>(parts) | v::join_with(sep) | r::to<string>();
 }
 
 inline string join(std::initializer_list<string_view> parts, string_view sep = " ") {
@@ -125,62 +136,55 @@ inline void require(bool condition, std::format_string<detail::eval_t<Args>...> 
     }
 }
 
-/// Collect elements from a range into a vector, keeping only the first occurrence
-/// per key. The key is extracted via a projection function.
-/// Usage: unique_by(libs_range, &LibraryData::name)
-template <r::input_range R, typename Proj = std::identity> auto unique_by(R&& range, Proj proj = {}) {
-    using T = r::range_value_t<R>;
-    using Key = std::remove_cvref_t<std::invoke_result_t<Proj, const T&>>;
-    std::unordered_set<Key> seen;
-    vector<T> result;
-    for (auto&& elem : std::forward<R>(range)) {
-        if (seen.insert(std::invoke(proj, elem)).second) {
-            result.push_back(std::forward<decltype(elem)>(elem));
+/// Dedup elements by key, keeping first occurrence. Pipe adaptor: range | unique_by(proj)
+namespace detail {
+
+template <typename Proj> struct unique_by_adaptor : r::range_adaptor_closure<unique_by_adaptor<Proj>> {
+    Proj proj;
+
+    template <r::input_range R> constexpr auto operator()(R&& range) const {
+        using Val = r::range_value_t<R>;
+        using Key = std::remove_cvref_t<std::invoke_result_t<Proj, const Val&>>;
+        std::unordered_set<Key> seen;
+        vector<Val> result;
+        for (auto&& elem : std::forward<R>(range)) {
+            if (seen.insert(std::invoke(proj, elem)).second) {
+                result.push_back(std::forward<decltype(elem)>(elem));
+            }
         }
+        return result;
     }
-    return result;
+};
+
+} // namespace detail
+
+/// range | unique_by(&Type::field) -- dedup keeping first occurrence per key.
+template <typename Proj = std::identity>
+    requires(!r::input_range<Proj>)
+auto unique_by(Proj proj = {}) {
+    return detail::unique_by_adaptor<Proj>{.proj = std::move(proj)};
 }
+
+/// Returns a filter that excludes elements present in the given set.
+/// Usage: source_roots | not_in(resources_roots) | ...
+inline auto not_in(const string_set& excluded) {
+    return v::filter([&excluded](const auto& val) { return !excluded.contains(val); });
+}
+
+/// A pair of open/close delimiters for extract_between.
+struct Delimiters {
+    string_view open;
+    string_view close;
+};
 
 /// Extract the substring between two delimiters, trimmed.
 /// Returns nullopt if either delimiter is missing.
-inline opt_string extract_between(string_view input, string_view open, string_view close) { // NOLINT(bugprone-*)
-    const auto begin_pos = input.find(open);
-    if (begin_pos == string_view::npos) {
-        return nullopt;
-    }
-    const auto content_start = begin_pos + open.size();
-    const auto end_pos = input.find(close, content_start);
-    if (end_pos == string_view::npos) {
-        return nullopt;
-    }
-    return string{trim(input.substr(content_start, end_pos - content_start))};
-}
+opt_string extract_between(string_view input, Delimiters delimiters);
 
 // --- File I/O ---
 
-inline string read_file(const fs::path& path) {
-    require(!path.empty(), "read_file: empty path");
+string read_file(const fs::path& path);
 
-    std::error_code ec;
-    const auto size = fs::file_size(path, ec);
-    require(!ec && !std::cmp_equal(size, -1), "Cannot determine file size: {}", path);
-
-    std::ifstream file(path, std::ios::in | std::ios::binary);
-    require(file.good(), "Failed to open file: {}", path);
-
-    string content(static_cast<size_t>(size), '\0');
-    file.read(content.data(), static_cast<std::streamsize>(size));
-    require(file.good(), "Failed to read file (got {}/{}): {}", [&] { return file.gcount(); }, size, path);
-    return content;
-}
-
-inline void write_file(const fs::path& path, string_view content) {
-    require(!path.empty(), "write_file: empty path");
-
-    std::ofstream file(path, std::ios::out | std::ios::binary | std::ios::trunc);
-    require(file.good(), "Failed to open file for writing: {}", path);
-    file.write(content.data(), static_cast<std::streamsize>(content.size()));
-    require(file.good(), "Failed to write file: {}", path);
-}
+void write_file(const fs::path& path, string_view content);
 
 } // namespace klspw

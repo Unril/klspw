@@ -1,4 +1,3 @@
-#include <atomic>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -7,6 +6,7 @@
 
 #include "gradle.hpp"
 #include "gradle_output.hpp"
+#include "test_common.hpp"
 
 namespace fs = std::filesystem;
 using P = klspw::GradleOutputParser;
@@ -220,33 +220,9 @@ TEST_CASE("parses fixture file") {
 
 // --- GradleRunner ---
 
-namespace {
-
-struct TempDir {
-    fs::path path;
-
-    TempDir() {
-        static std::atomic<int> counter{0};
-        path = fs::temp_directory_path() / ("klspw_gradle_test_" + std::to_string(counter++));
-        fs::create_directories(path);
-    }
-
-    ~TempDir() {
-        std::error_code ec;
-        fs::remove_all(path, ec);
-    }
-    TempDir(const TempDir&) = delete;
-    TempDir& operator=(const TempDir&) = delete;
-    TempDir(TempDir&&) = delete;
-    TempDir& operator=(TempDir&&) = delete;
-};
-
-} // namespace
-
 TEST_CASE("GradleRunner writes init script to specified temp dir") {
     const TempDir tmp;
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const klspw::GradleRunner runner(cfg.build(), tmp.path);
+    const klspw::GradleRunner runner(tmp.path);
 
     const auto& path = runner.init_script_path();
     REQUIRE(fs::exists(path));
@@ -256,8 +232,7 @@ TEST_CASE("GradleRunner writes init script to specified temp dir") {
 
 TEST_CASE("init script contains expected markers") {
     const TempDir tmp;
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const klspw::GradleRunner runner(cfg.build(), tmp.path);
+    const klspw::GradleRunner runner(tmp.path);
 
     const auto content = klspw::read_file(runner.init_script_path());
 
@@ -271,8 +246,7 @@ TEST_CASE("init script is cleaned up on destruction") {
     const TempDir tmp;
     fs::path script_path;
     {
-        const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-        const klspw::GradleRunner runner(cfg.build(), tmp.path);
+        const klspw::GradleRunner runner(tmp.path);
         script_path = runner.init_script_path();
         REQUIRE(fs::exists(script_path));
     }
@@ -280,8 +254,7 @@ TEST_CASE("init script is cleaned up on destruction") {
 }
 
 TEST_CASE("GradleRunner uses default temp dir when not specified") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const klspw::GradleRunner runner(cfg.build());
+    const klspw::GradleRunner runner;
 
     const auto& path = runner.init_script_path();
     REQUIRE(fs::exists(path));
@@ -290,9 +263,9 @@ TEST_CASE("GradleRunner uses default temp dir when not specified") {
 
 // --- BuildConfig ---
 
-TEST_CASE("BuildConfig::gradle_args_for produces correct argument order") {
+TEST_CASE("BuildConfig::args_for produces correct argument order") {
     const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const auto args = cfg.build().gradle_args_for("/tmp/proj", "/tmp/init.gradle.kts");
+    const auto args = cfg.build().args_for("/tmp/proj", "/tmp/init.gradle.kts");
 
     // command: [mybuild, gradle], gradle_args: [--quiet]
     // mybuild gradle --init-script /tmp/init.gradle.kts --quiet -p /tmp/proj dumpKotlinLspModel
@@ -309,11 +282,10 @@ TEST_CASE("BuildConfig::gradle_args_for produces correct argument order") {
 
 // --- SourceSet → workspace model conversion ---
 
-TEST_CASE("SourceSet::library_name_for_jar extracts stem") {
-    using SS = klspw::SourceSet;
-    CHECK(SS::library_name_for_jar("/path/to/kotlin-stdlib-2.0.0.jar") == "kotlin-stdlib-2.0.0");
-    CHECK(SS::library_name_for_jar("/cache/jackson-core-2.15.3.jar") == "jackson-core-2.15.3");
-    CHECK(SS::library_name_for_jar("simple.jar") == "simple");
+TEST_CASE("library_name_for_jar extracts stem") {
+    CHECK(klspw::library_name_for_jar("/path/to/kotlin-stdlib-2.0.0.jar") == "kotlin-stdlib-2.0.0");
+    CHECK(klspw::library_name_for_jar("/cache/jackson-core-2.15.3.jar") == "jackson-core-2.15.3");
+    CHECK(klspw::library_name_for_jar("simple.jar") == "simple");
 }
 
 TEST_CASE("SourceSet::to_source_roots classifies main sources") {
@@ -433,16 +405,19 @@ TEST_CASE("SourceSet::collect_library_deps uses correct scope") {
 
     const auto& main_deps = output.projects[0].source_sets[0].collect_library_deps();
     REQUIRE(main_deps.size() == 1);
-    const auto& main_dep = std::get<klspw::LibraryDep>(main_deps[0]);
-    CHECK(main_dep.scope == klspw::DependencyScope::compile);
+    CHECK(main_deps[0].scope == klspw::DependencyScope::compile);
 
     const auto& test_deps = output.projects[0].source_sets[1].collect_library_deps();
     REQUIRE(test_deps.size() == 1);
-    const auto& test_dep = std::get<klspw::LibraryDep>(test_deps[0]);
-    CHECK(test_dep.scope == klspw::DependencyScope::test);
+    CHECK(test_deps[0].scope == klspw::DependencyScope::test);
 }
 
 // --- GradleProject → workspace model conversion ---
+
+namespace {
+constexpr klspw::GenerationOptions no_tests{.include_tests = false};
+constexpr klspw::GenerationOptions with_tests{.include_tests = true};
+} // namespace
 
 TEST_CASE("GradleProject::to_module builds module with deps and content roots") {
     const auto output = P::parse(R"({
@@ -467,7 +442,7 @@ TEST_CASE("GradleProject::to_module builds module with deps and content roots") 
         }]
     })");
 
-    const auto mod = output.projects[0].to_module(false);
+    const auto mod = output.projects[0].to_module(no_tests);
 
     CHECK(mod.name == "proj");
     CHECK(mod.type == "JAVA_MODULE");
@@ -499,12 +474,12 @@ TEST_CASE("GradleProject::to_module excludes test source sets when include_tests
         }]
     })");
 
-    const auto mod_no_tests = output.projects[0].to_module(false);
+    const auto mod_no_tests = output.projects[0].to_module(no_tests);
     // Only main source root, only 1 lib dep (a.jar) + 2 sentinels
     CHECK(mod_no_tests.contentRoots[0].sourceRoots.size() == 1);
     CHECK(mod_no_tests.dependencies.size() == 3);
 
-    const auto mod_with_tests = output.projects[0].to_module(true);
+    const auto mod_with_tests = output.projects[0].to_module(with_tests);
     // main + test source roots, 2 lib deps (a.jar deduped, junit.jar) + 2 sentinels
     CHECK(mod_with_tests.contentRoots[0].sourceRoots.size() == 2);
     CHECK(mod_with_tests.dependencies.size() == 4);
@@ -525,7 +500,7 @@ TEST_CASE("GradleProject::to_module deduplicates library deps across source sets
         }]
     })");
 
-    const auto mod = output.projects[0].to_module(true);
+    const auto mod = output.projects[0].to_module(with_tests);
     // a.jar (from main, compile), b.jar (from main, compile), c.jar (from test, test) + 2 sentinels
     // a.jar appears in both but should be deduped (first occurrence wins = compile scope)
     size_t lib_dep_count = 0;
@@ -560,7 +535,7 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
         }]
     })");
 
-    const auto ks = output.projects[0].to_kotlin_settings(R"(J{"jvmTarget":"21"})", false);
+    const auto ks = output.projects[0].to_kotlin_settings(R"(J{"jvmTarget":"21"})", no_tests);
 
     CHECK(ks.name == "Kotlin");
     CHECK(ks.module == "proj");
@@ -579,7 +554,7 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
 
 TEST_CASE("GradleBuildOutput::to_workspace builds complete workspace") {
     const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
-    const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", false);
+    const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", no_tests);
 
     // One active project → one module
     REQUIRE(ws.modules.size() == 1);
@@ -623,7 +598,7 @@ TEST_CASE("GradleBuildOutput::to_workspace deduplicates libraries across project
         ]
     })");
 
-    const auto ws = output.to_workspace("", false);
+    const auto ws = output.to_workspace("", no_tests);
 
     CHECK(ws.modules.size() == 2);
     // shared.jar deduped: only 3 unique libraries
@@ -652,29 +627,18 @@ TEST_CASE("GradleBuildOutput::to_workspace skips skipped projects") {
         ]
     })");
 
-    const auto ws = output.to_workspace("", false);
+    const auto ws = output.to_workspace("", no_tests);
 
     CHECK(ws.modules.size() == 1);
     CHECK(ws.modules[0].name == "active");
     CHECK(ws.kotlinSettings.size() == 1);
 }
 
-// --- Config::compiler_arguments_json ---
-
-TEST_CASE("Config::compiler_arguments_json formats J-prefixed JSON") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const auto args = cfg.compiler_arguments_json();
-
-    CHECK(args.starts_with("J{"));
-    CHECK(args.ends_with("}"));
-    CHECK(args.contains("jvmTarget"));
-}
-
 // --- WorkspaceData round-trip through to_workspace ---
 
 TEST_CASE("to_workspace output serializes to valid JSON") {
     const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
-    const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", false);
+    const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", no_tests);
 
     // Serialize to JSON and back via glaze
     const auto json_result = glz::write_json(ws);
@@ -685,4 +649,44 @@ TEST_CASE("to_workspace output serializes to valid JSON") {
     CHECK(ws2->modules.size() == ws.modules.size());
     CHECK(ws2->libraries.size() == ws.libraries.size());
     CHECK(ws2->kotlinSettings.size() == ws.kotlinSettings.size());
+}
+
+// --- WorkspaceData::merge ---
+
+TEST_CASE("WorkspaceData::merge combines modules and deduplicates libraries") {
+    klspw::WorkspaceData ws1{
+        .modules = {{.name = "mod-a"}},
+        .libraries = {{.name = "shared-lib", .roots = {{.path = "/a/shared.jar"}}},
+                      {.name = "only-a", .roots = {{.path = "/a/only-a.jar"}}}},
+    };
+
+    klspw::WorkspaceData ws2{
+        .modules = {{.name = "mod-b"}},
+        .libraries = {{.name = "shared-lib", .roots = {{.path = "/b/shared.jar"}}},
+                      {.name = "only-b", .roots = {{.path = "/b/only-b.jar"}}}},
+    };
+
+    ws1.merge(std::move(ws2));
+
+    CHECK(ws1.modules.size() == 2);
+    CHECK(ws1.modules[0].name == "mod-a");
+    CHECK(ws1.modules[1].name == "mod-b");
+
+    // shared-lib deduped (first occurrence wins), so 3 total.
+    REQUIRE(ws1.libraries.size() == 3);
+    CHECK(ws1.libraries[0].name == "shared-lib");
+    CHECK(ws1.libraries[0].roots[0].path == "/a/shared.jar"); // first wins
+    CHECK(ws1.libraries[1].name == "only-a");
+    CHECK(ws1.libraries[2].name == "only-b");
+}
+
+TEST_CASE("WorkspaceData::merge appends kotlin settings") {
+    klspw::WorkspaceData ws1{.kotlinSettings = {{.name = "Kotlin", .module = "a"}}};
+    klspw::WorkspaceData ws2{.kotlinSettings = {{.name = "Kotlin", .module = "b"}}};
+
+    ws1.merge(std::move(ws2));
+
+    REQUIRE(ws1.kotlinSettings.size() == 2);
+    CHECK(ws1.kotlinSettings[0].module == "a");
+    CHECK(ws1.kotlinSettings[1].module == "b");
 }

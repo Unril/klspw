@@ -1,0 +1,15 @@
+version: 1
+workspace_file: ./workspace.json
+jvm_target: "21"
+
+roots:
+  - path: ./src/proj_1
+    command: ["./gradlew"]
+    gradle_args: ["--quiet"]
+
+  - path: ./src/proj_3
+    command: ["brazil-build", "gradle"]
+    gradle_args: ["--no-daemon", "--stacktrace"]
+
+options:
+  include_tests: true
