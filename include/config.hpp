@@ -30,9 +30,9 @@ namespace klspw {
 
 /// Behavioral flags controlling workspace generation.
 struct GenerationOptions {
-    bool include_tests = true;
-    bool attach_sources = true;
-    bool follow_symlinks = true;
+    bool include_tests = true; ///< Include test source sets in the workspace.
+    bool attach_sources = true; ///< Discover and attach source jars to libraries (not yet implemented).
+    bool follow_symlinks = true; ///< Follow symlinks when resolving paths (not yet implemented).
 };
 
 /// Gradle build command and extra arguments.
@@ -40,8 +40,8 @@ struct GenerationOptions {
 /// The resulting command line is:
 ///   {command...} --init-script {path} {gradle_args...} -p {root} dumpKotlinLspModel
 struct BuildConfig {
-    strings command;
-    strings gradle_args;
+    strings command; ///< Build tool executable and fixed args (e.g., ["./gradlew"] or ["brazil-build", "gradle"]).
+    strings gradle_args; ///< Extra Gradle flags (e.g., ["--quiet", "--no-daemon"]).
 
     strings args_for(const fs::path& root, const fs::path& init_script) const {
         strings args;
@@ -57,19 +57,19 @@ struct BuildConfig {
 
 /// A project root to process. Optionally overrides the global build config.
 struct RootEntry {
-    string path;
-    strings command;
-    strings gradle_args;
+    string path; ///< Relative or absolute path to the Gradle root project directory.
+    strings command; ///< Per-root build command override. Empty = inherit global.
+    strings gradle_args; ///< Per-root Gradle args override. Empty = inherit global.
 };
 
 /// Plain YAML-deserializable config data. Never mutated after deserialization.
 struct ConfigData {
-    int version = 0;
-    string workspace_file;
-    string jvm_target = "21";
-    BuildConfig build;
-    vector<RootEntry> roots;
-    GenerationOptions options;
+    int version = 0; ///< Config schema version (must be 1).
+    string workspace_file; ///< Output workspace.json path (relative to config dir). Optional.
+    string jvm_target = "21"; ///< JVM target version for kotlin-lsp compilerArguments.
+    BuildConfig build; ///< Global build command and Gradle args.
+    vector<RootEntry> roots; ///< Gradle root projects to process (at least one required).
+    GenerationOptions options; ///< Behavioral flags for workspace generation.
 
     void validate() const {
         require(version != 0, "Config missing required field: version");

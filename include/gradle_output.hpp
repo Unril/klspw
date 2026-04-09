@@ -8,8 +8,8 @@
 /// that extracts it from Gradle's noisy stdout.
 ///
 /// Each model type owns its conversion to workspace model types (Tell Don't Ask):
-///   SourceSet       -> SourceRootData, ContentRootData, LibraryData, LibraryDep
-///   GradleProject   -> ModuleData, KotlinSettingsData
+///   SourceSet       -> SourceRootData, LibraryData, LibraryDep
+///   GradleProject   -> ModuleData (with ContentRootData), KotlinSettingsData
 ///   GradleBuildOutput -> WorkspaceData (the full pipeline entry point)
 ///
 /// JSON field names are camelCase (matching the Kotlin init script output).
@@ -35,30 +35,34 @@ inline string library_name_for_jar(string_view jar) {
 
 /// A Gradle source set (main, test, integrationTest, etc.).
 ///
-/// Represents one entry in the "sourceSets" array of the init script JSON.
+/// Mirrors one entry in the "sourceSets" array emitted by SourceSet.toModel()
+/// in resources/init.gradle.kts. Fields map 1:1 via glz::camel_case:
+///   C++ source_roots -> JSON sourceRoots, etc.
+///
 /// source_roots includes all dirs (kotlin + java + resources); java_source_roots
 /// is the Java-only subset. The difference identifies pure-Kotlin folders for
-/// KotlinSettingsData.pureKotlinSourceFolders.
+/// KotlinSettingsData.pure_kotlin_source_folders.
 ///
 /// All path fields are plain strings -- fs::path operations happen at usage sites.
 struct SourceSet {
-    string name;
-    strings source_roots;
-    string_set java_source_roots;
-    string_set resources_roots;
-    strings classes_dirs;
-    opt_string resources_dir;
-    strings compile_classpath;
-    strings runtime_classpath;
-    string compile_classpath_configuration_name;
-    string runtime_classpath_configuration_name;
+    string name; ///< Source set name (e.g., "main", "test", "integrationTest").
+    strings source_roots; ///< All source dirs (kotlin + java + resources).
+    string_set java_source_roots; ///< Java-only source dirs (subset of source_roots).
+    string_set resources_roots; ///< Resource directories.
+    strings classes_dirs; ///< Compiled .class output directories.
+    opt_string resources_dir; ///< Processed resources output directory.
+    strings compile_classpath; ///< Jars available at compile time.
+    strings runtime_classpath; ///< Jars available at runtime.
+    string compile_classpath_configuration_name; ///< Gradle configuration name for compile classpath.
+    string runtime_classpath_configuration_name; ///< Gradle configuration name for runtime classpath.
 
     /// Heuristic: any source set whose name contains "test" or "Test".
     bool is_test() const { return name.contains("test") || name.contains("Test"); }
     bool is_source() const { return !is_test(); }
     DependencyScope dep_scope() const { return is_test() ? DependencyScope::test : DependencyScope::compile; }
 
-    /// Source roots not in java_source_roots -- directories containing only .kt files.
+    /// Source roots not in java_source_roots (includes resource dirs).
+    /// Used to populate KotlinSettingsData.pure_kotlin_source_folders.
     auto pure_kotlin_roots() const { return source_roots | not_in(java_source_roots); }
 
     // --- Factory methods for workspace model types ---
@@ -84,6 +88,7 @@ struct SourceSet {
     vector<SourceRootData> to_source_roots() const {
         auto to_src = [&](const auto& p) { return source_root(p); };
         auto to_res = [&](const auto& p) { return resource_root(p); };
+        // Exclude resource dirs from source pass -- they're added below as resource-type roots.
         auto roots = source_roots | not_in(resources_roots) | v::transform(to_src) | to_vector();
         roots.append_range(resources_roots | v::transform(to_res));
         return roots;
@@ -101,15 +106,19 @@ struct SourceSet {
 
 // --- GradleProject ---
 
-/// Module name is derived from the last path component of project_dir.
-/// Skipped projects carry a skip_reason and are excluded from workspace generation.
+/// A Gradle (sub)project discovered by the init script.
+///
+/// Mirrors one entry in the "projects" array emitted by Project.detectModel()
+/// in resources/init.gradle.kts. Module name is derived from the last path
+/// component of project_dir. Skipped projects carry a skip_reason and are
+/// excluded from workspace generation.
 struct GradleProject {
-    string project_path;
-    string project_dir;
-    string kind;
-    strings plugins;
-    vector<SourceSet> source_sets;
-    opt_string skip_reason;
+    string project_path; ///< Gradle project path (e.g., ":", ":subproject").
+    string project_dir; ///< Absolute path to the project directory.
+    string kind; ///< Project kind (e.g., "jvm", "non-jvm").
+    strings plugins; ///< Applied Gradle plugin class names.
+    vector<SourceSet> source_sets; ///< All source sets discovered by the init script.
+    opt_string skip_reason; ///< If set, project is excluded from workspace generation.
 
     bool is_skipped() const { return skip_reason.has_value(); }
     string module_name() const { return fs::path{project_dir}.filename().string(); }
@@ -167,21 +176,18 @@ struct GradleProject {
 
 // --- GradleBuildOutput ---
 
-/// Top-level Gradle build output: root project path + all discovered (sub)projects.
-/// to_workspace() is the main entry point for the Gradle -> workspace.json pipeline.
+/// Top-level Gradle build output emitted between KLSPW_BEGIN/KLSPW_END delimiters.
+/// Mirrors the root JSON object from resources/init.gradle.kts: rootProject + projects.
+/// to_workspace() is the main entry point for the Gradle -> workspace.json conversion.
 struct GradleBuildOutput {
-    string root_project;
-    vector<GradleProject> projects;
+    string root_project; ///< Absolute path to the Gradle root project directory.
+    vector<GradleProject> projects; ///< All discovered (sub)projects, including skipped ones.
 
     size_t active_project_count() const {
         return static_cast<size_t>(r::count_if(projects, std::not_fn(&GradleProject::is_skipped)));
     }
 
     auto active_projects() const { return projects | v::filter(std::not_fn(&GradleProject::is_skipped)); }
-
-    static vector<LibraryData> collect_libraries(const vector<SourceSet>& sets) {
-        return sets | v::transform(&SourceSet::collect_libraries) | v::join | unique_by(&LibraryData::name);
-    }
 
     WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
         auto active = active_projects() | to_vector();
@@ -194,7 +200,7 @@ struct GradleBuildOutput {
         for (const auto& [proj, sets] : v::zip(active, sets_per_project)) {
             ws.modules.push_back(proj.to_module(sets));
             ws.kotlin_settings.push_back(proj.to_kotlin_settings(compiler_args_json, sets));
-            ws.libraries.append_range(collect_libraries(sets));
+            ws.libraries.append_range(sets | v::transform(&SourceSet::collect_libraries) | v::join | to_vector());
         }
 
         // Deduplicate libraries by name, keeping first occurrence.
@@ -203,26 +209,25 @@ struct GradleBuildOutput {
     }
 };
 
-// --- GradleOutputParser ---
+// --- Gradle output parsing ---
 
-class GradleOutputParser {
-  public:
-    static constexpr string_view begin_delimiter = "KLSPW_BEGIN";
-    static constexpr string_view end_delimiter = "KLSPW_END";
+inline constexpr string_view gradle_begin_delimiter = "KLSPW_BEGIN";
+inline constexpr string_view gradle_end_delimiter = "KLSPW_END";
 
-    static string extract_json(string_view raw_output) {
-        auto result = extract_between(raw_output, {.open = begin_delimiter, .close = end_delimiter});
-        require(result.has_value(), "{}/{} delimiters not found in Gradle output", begin_delimiter, end_delimiter);
-        return std::move(*result);
-    }
+inline string extract_gradle_json(string_view raw_output) {
+    auto result = extract_between(raw_output, {.open = gradle_begin_delimiter, .close = gradle_end_delimiter});
+    require(result.has_value(), "{}/{} delimiters not found in Gradle output", gradle_begin_delimiter,
+            gradle_end_delimiter);
+    return std::move(*result);
+}
 
-    static GradleBuildOutput parse(string_view json_str) {
-        GradleBuildOutput output;
-        const auto ec = glz::read<ws_read_opts>(output, json_str);
-        require(!ec, "Failed to parse Gradle JSON: {}", [&] { return glz::format_error(ec, json_str); });
-        return output;
-    }
-};
+/// Parse a JSON string into a GradleBuildOutput. Uses ws_read_opts (ignores unknown keys).
+inline GradleBuildOutput parse_gradle_output(string_view json_str) {
+    GradleBuildOutput output;
+    const auto ec = glz::read<ws_read_opts>(output, json_str);
+    require(!ec, "Failed to parse Gradle JSON: {}", [&] { return glz::format_error(ec, json_str); });
+    return output;
+}
 
 } // namespace klspw
 

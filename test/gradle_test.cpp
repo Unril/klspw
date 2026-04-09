@@ -9,9 +9,8 @@
 #include "test_common.hpp"
 
 namespace fs = std::filesystem;
-using P = klspw::GradleOutputParser;
 
-// --- GradleOutputParser::extract_json ---
+// --- extract_gradle_json ---
 
 TEST_CASE("extracts JSON block from mixed Gradle output") {
     const auto* const input = R"(
@@ -31,7 +30,7 @@ KLSPW_END
 BUILD SUCCESSFUL in 3s
 )";
 
-    const auto json = P::extract_json(input);
+    const auto json = klspw::extract_gradle_json(input);
 
     CHECK(json.front() == '{');
     CHECK(json.back() == '}');
@@ -41,25 +40,25 @@ BUILD SUCCESSFUL in 3s
 }
 
 TEST_CASE("extracts JSON block with minimal surrounding content") {
-    CHECK(P::extract_json("KLSPW_BEGIN\n{}\nKLSPW_END") == "{}");
+    CHECK(klspw::extract_gradle_json("KLSPW_BEGIN\n{}\nKLSPW_END") == "{}");
 }
 
 TEST_CASE("throws on missing KLSPW_BEGIN") {
-    CHECK_THROWS_AS((void)P::extract_json("some output\nKLSPW_END\n"), std::runtime_error);
+    CHECK_THROWS_AS((void)klspw::extract_gradle_json("some output\nKLSPW_END\n"), std::runtime_error);
 }
 
 TEST_CASE("throws on missing KLSPW_END") {
-    CHECK_THROWS_AS((void)P::extract_json("KLSPW_BEGIN\n{}\n"), std::runtime_error);
+    CHECK_THROWS_AS((void)klspw::extract_gradle_json("KLSPW_BEGIN\n{}\n"), std::runtime_error);
 }
 
 TEST_CASE("throws on empty input") {
-    CHECK_THROWS_AS((void)P::extract_json(""), std::runtime_error);
+    CHECK_THROWS_AS((void)klspw::extract_gradle_json(""), std::runtime_error);
 }
 
-// --- GradleOutputParser::parse ---
+// --- parse_gradle_output ---
 
 TEST_CASE("parses minimal valid JSON") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": []
     })");
@@ -70,7 +69,7 @@ TEST_CASE("parses minimal valid JSON") {
 }
 
 TEST_CASE("parses project with source sets") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -118,7 +117,7 @@ TEST_CASE("parses project with source sets") {
 }
 
 TEST_CASE("parses project with skip reason") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":sub",
@@ -138,7 +137,7 @@ TEST_CASE("parses project with skip reason") {
 }
 
 TEST_CASE("parses project with null resourcesDir") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -166,7 +165,7 @@ TEST_CASE("parses project with null resourcesDir") {
 }
 
 TEST_CASE("SourceSet::is_test detects test source sets") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -189,11 +188,11 @@ TEST_CASE("SourceSet::is_test detects test source sets") {
 }
 
 TEST_CASE("throws on malformed JSON") {
-    CHECK_THROWS_AS((void)P::parse("{not valid json}"), std::runtime_error);
+    CHECK_THROWS_AS((void)klspw::parse_gradle_output("{not valid json}"), std::runtime_error);
 }
 
 TEST_CASE("parses empty fixture file") {
-    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_empty_output.json"));
+    const auto output = klspw::parse_gradle_output(klspw::read_file("test/fixtures/gradle_empty_output.json"));
 
     CHECK(output.root_project == "/home/dev/projects/my-kotlin-service");
     CHECK(output.projects.empty());
@@ -201,7 +200,7 @@ TEST_CASE("parses empty fixture file") {
 }
 
 TEST_CASE("parses fixture file") {
-    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
+    const auto output = klspw::parse_gradle_output(klspw::read_file("test/fixtures/gradle_output.json"));
 
     CHECK(output.root_project == "/home/dev/projects/my-kotlin-service");
     CHECK_FALSE(output.projects.empty());
@@ -270,7 +269,7 @@ TEST_CASE("library_name_for_jar extracts stem") {
 }
 
 TEST_CASE("SourceSet::to_source_roots classifies main sources") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -306,7 +305,7 @@ TEST_CASE("SourceSet::to_source_roots classifies main sources") {
 }
 
 TEST_CASE("SourceSet::to_source_roots classifies test sources") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -337,7 +336,7 @@ TEST_CASE("SourceSet::to_source_roots classifies test sources") {
 }
 
 TEST_CASE("SourceSet::collect_libraries builds one library per jar") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -370,7 +369,7 @@ TEST_CASE("SourceSet::collect_libraries builds one library per jar") {
 }
 
 TEST_CASE("SourceSet::collect_library_deps uses correct scope") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -401,7 +400,7 @@ constexpr klspw::GenerationOptions with_tests{.include_tests = true};
 } // namespace
 
 TEST_CASE("GradleProject::to_module builds module with deps and content roots") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -441,7 +440,7 @@ TEST_CASE("GradleProject::to_module builds module with deps and content roots") 
 }
 
 TEST_CASE("GradleProject::to_module excludes test source sets when include_tests=false") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -468,7 +467,7 @@ TEST_CASE("GradleProject::to_module excludes test source sets when include_tests
 }
 
 TEST_CASE("GradleProject::to_module deduplicates library deps across source sets") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -495,7 +494,7 @@ TEST_CASE("GradleProject::to_module deduplicates library deps across source sets
 }
 
 TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
             "projectPath": ":",
@@ -534,7 +533,7 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
 // --- GradleBuildOutput → WorkspaceData ---
 
 TEST_CASE("GradleBuildOutput::to_workspace builds complete workspace") {
-    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
+    const auto output = klspw::parse_gradle_output(klspw::read_file("test/fixtures/gradle_output.json"));
     const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", no_tests);
 
     // One active project → one module
@@ -554,7 +553,7 @@ TEST_CASE("GradleBuildOutput::to_workspace builds complete workspace") {
 }
 
 TEST_CASE("GradleBuildOutput::to_workspace deduplicates libraries across projects") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/root",
         "projects": [
             {
@@ -582,7 +581,7 @@ TEST_CASE("GradleBuildOutput::to_workspace deduplicates libraries across project
 }
 
 TEST_CASE("GradleBuildOutput::to_workspace skips skipped projects") {
-    const auto output = P::parse(R"({
+    const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/root",
         "projects": [
             {
@@ -613,7 +612,7 @@ TEST_CASE("GradleBuildOutput::to_workspace skips skipped projects") {
 // --- WorkspaceData round-trip through to_workspace ---
 
 TEST_CASE("to_workspace output serializes to valid JSON") {
-    const auto output = P::parse(klspw::read_file("test/fixtures/gradle_output.json"));
+    const auto output = klspw::parse_gradle_output(klspw::read_file("test/fixtures/gradle_output.json"));
     const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", no_tests);
 
     const auto json_result = glz::write_json(ws);

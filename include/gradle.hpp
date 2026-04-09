@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <spdlog/spdlog.h>
 #include <unistd.h>
 
@@ -9,17 +11,34 @@
 
 namespace klspw {
 
+/// Signature for running a Gradle build: (BuildConfig, root_path) -> stdout.
+/// TODO: switch to std::move_only_function when libc++ ships it.
+using GradleBuildFn = std::function<string(const BuildConfig&, const fs::path&)>;
+
 /// Manages the Gradle init script lifecycle and process execution.
 ///
 /// Writes the embedded init script to a temp directory on construction.
 /// Each run() call takes a BuildConfig + root path, assembles the command,
 /// and delegates to ProcessRunner. The script is removed on close() or destruction.
+///
+/// Movable but not copyable (unique ownership of the temp init script file).
 class GradleRunner {
   public:
     GradleRunner(const GradleRunner&) = delete;
     GradleRunner& operator=(const GradleRunner&) = delete;
-    GradleRunner(GradleRunner&&) = delete;
-    GradleRunner& operator=(GradleRunner&&) = delete;
+
+    GradleRunner(GradleRunner&& other) noexcept : init_script_path_{std::move(other.init_script_path_)} {
+        other.init_script_path_.clear();
+    }
+
+    GradleRunner& operator=(GradleRunner&& other) noexcept {
+        if (this != &other) {
+            close();
+            init_script_path_ = std::move(other.init_script_path_);
+            other.init_script_path_.clear();
+        }
+        return *this;
+    }
 
     /// Uses system temp dir for the init script.
     GradleRunner() : GradleRunner(fs::temp_directory_path() / "klspw") {}
@@ -27,17 +46,11 @@ class GradleRunner {
     /// Explicit temp directory (for testing).
     explicit GradleRunner(const fs::path& temp_dir) : init_script_path_{write_init_script(temp_dir)} {}
 
-    ~GradleRunner() noexcept {
-        try {
-            close();
-        } catch (const std::exception& e) {
-            spdlog::warn("Failed to clean up init script: {}", e.what());
-        }
-    }
+    ~GradleRunner() noexcept { close(); }
 
     /// Remove the init script from disk.
     /// Safe to call multiple times -- subsequent calls are no-ops.
-    void close() {
+    void close() noexcept {
         if (init_script_path_.empty()) {
             return;
         }
@@ -51,7 +64,7 @@ class GradleRunner {
     }
 
     /// Run Gradle against a root directory with the given build config. Returns captured stdout.
-    string run(const BuildConfig& build, const fs::path& root) const {
+    string operator()(const BuildConfig& build, const fs::path& root) const {
         return ProcessRunner(build.args_for(root, init_script_path_)).run();
     }
 

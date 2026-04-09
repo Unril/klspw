@@ -2,7 +2,7 @@
 
 /// Workspace generation pipeline.
 ///
-/// Pipeline owns a Config (by value) and a GradleRunner reference (injected),
+/// Pipeline owns a Config (by value) and a build function (injected),
 /// orchestrating workspace building, writing, and inspection.
 
 #include <spdlog/spdlog.h>
@@ -13,12 +13,14 @@
 
 namespace klspw {
 
+/// Log a human-readable summary of workspace contents. Defined below Pipeline.
+void log_workspace_summary(const WorkspaceData& ws);
+
 /// Orchestrates Gradle execution across config roots and produces WorkspaceData.
 class Pipeline {
   public:
-    /// runner must outlive this Pipeline instance.
-    Pipeline(Config cfg, const GradleRunner* runner) : cfg_{std::move(cfg)}, runner_{runner} {
-        require(runner_ != nullptr, "Pipeline: runner must not be null");
+    Pipeline(Config cfg, GradleBuildFn run_gradle) : cfg_{std::move(cfg)}, run_gradle_{std::move(run_gradle)} {
+        require(run_gradle_ != nullptr, "Pipeline: run_gradle must not be null");
     }
 
     /// Run Gradle on each root and merge results into a single WorkspaceData.
@@ -47,26 +49,50 @@ class Pipeline {
     }
 
     /// Build workspace and log a summary of modules, libraries, and settings.
-    void log_workspace() const { build_workspace().log_summary(); }
+    void log_workspace() const { log_workspace_summary(build_workspace()); }
 
   private:
+    /// Log a human-readable summary of workspace contents.
+    static void log_workspace_summary(const WorkspaceData& ws) {
+        spdlog::info("Modules ({}):", ws.modules.size());
+        for (const auto& mod : ws.modules) {
+            const auto lib_deps =
+                r::count_if(mod.dependencies, [](const auto& d) { return std::holds_alternative<LibraryDep>(d); });
+            spdlog::info("  {} ({} deps, {} content root(s))", mod.name, lib_deps, mod.content_roots.size());
+            for (const auto& cr : mod.content_roots) {
+                spdlog::info("    root: {} ({} source root(s))", cr.path, cr.source_roots.size());
+            }
+        }
+
+        spdlog::info("Libraries ({}):", ws.libraries.size());
+        for (const auto& lib : ws.libraries) {
+            spdlog::info("  {} ({} root(s))", lib.name, lib.roots.size());
+        }
+
+        spdlog::info("Kotlin settings ({}):", ws.kotlin_settings.size());
+        for (const auto& ks : ws.kotlin_settings) {
+            spdlog::info("  module={}, {} source root(s), {} pure-kotlin folder(s)", ks.module, ks.source_roots.size(),
+                         ks.pure_kotlin_source_folders.size());
+        }
+    }
+
     WorkspaceData build_root_workspace(const RootEntry& root) const {
         const auto build = cfg_.build_for(root);
         const auto root_path = cfg_.root_path(root);
         spdlog::info("Processing root: {}", root_path.string());
 
-        const auto raw_output = runner_->run(build, root_path);
+        const auto raw_output = run_gradle_(build, root_path);
         spdlog::debug("Gradle output: {} bytes", raw_output.size());
 
-        const auto json_str = GradleOutputParser::extract_json(raw_output);
-        const auto build_output = GradleOutputParser::parse(json_str);
+        const auto json_str = extract_gradle_json(raw_output);
+        const auto build_output = parse_gradle_output(json_str);
         spdlog::info("  {} project(s), {} active", build_output.projects.size(), build_output.active_project_count());
 
         return build_output.to_workspace(cfg_.compiler_arguments_json(), cfg_.options());
     }
 
     Config cfg_;
-    const GradleRunner* runner_;
+    GradleBuildFn run_gradle_;
 };
 
 } // namespace klspw

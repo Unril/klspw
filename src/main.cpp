@@ -55,8 +55,8 @@ int main(int argc, char* argv[]) try {
         return 0;
     }
 
-    const klspw::GradleRunner runner;
-    const klspw::Pipeline pipeline{std::move(cfg), &runner};
+    klspw::GradleRunner runner;
+    const klspw::Pipeline pipeline{std::move(cfg), std::ref(runner)};
 
     if (gen->parsed()) {
         pipeline.write_workspace();
