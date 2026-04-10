@@ -46,7 +46,8 @@ auto unique_by(Proj proj = {}) {
 /// Returns a filter that excludes elements present in the given set.
 /// Usage: source_roots | not_in(resources_roots) | ...
 /// The returned view captures excluded by reference -- caller must ensure the set outlives the view.
-inline auto not_in(const string_set& excluded) {
+/// Safe when used in a single expression that materializes with to_vector().
+[[nodiscard]] inline auto not_in(const string_set& excluded) {
     return v::filter([&excluded](const auto& val) { return !excluded.contains(val); });
 }
 

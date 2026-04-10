@@ -4,6 +4,7 @@
 #include "files.hpp"
 #include "ranges.hpp"
 #include "strings.hpp"
+#include "test_common.hpp"
 
 using namespace klspw;
 
@@ -155,27 +156,20 @@ TEST_CASE("unique_by on range with no duplicates") {
 // --- read_file / write_file ---
 
 TEST_CASE("write_file and read_file round-trip") {
-    const auto dir = std::filesystem::temp_directory_path() / "klspw_common_test";
-    std::filesystem::create_directories(dir);
-    const auto path = dir / "test_rw.txt";
+    const TempDir dir;
+    const auto path = dir.path / "test_rw.txt";
 
     klspw::write_file(path, "hello world");
-    const auto content = klspw::read_file(path);
-    CHECK(content == "hello world");
-
-    std::filesystem::remove(path);
-    std::filesystem::remove(dir);
+    CHECK(klspw::read_file(path) == "hello world");
 }
 
 TEST_CASE("write_file creates file with binary content") {
-    const auto path = std::filesystem::temp_directory_path() / "klspw_binary_test.bin";
+    const TempDir dir;
+    const auto path = dir.path / "binary_test.bin";
     const std::string binary_data = {'\x00', '\x01', '\x02', '\xff'};
 
     klspw::write_file(path, binary_data);
-    const auto content = klspw::read_file(path);
-    CHECK(content == binary_data);
-
-    std::filesystem::remove(path);
+    CHECK(klspw::read_file(path) == binary_data);
 }
 
 TEST_CASE("read_file throws on empty path") {
@@ -227,65 +221,52 @@ TEST_CASE("require evaluates callable lazily") {
 // --- find_entry / find_dir / find_file ---
 
 TEST_CASE("find_dir finds directory matching suffix") {
-    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test";
-    std::filesystem::create_directories(dir / "a" / "b" / "target-dir");
+    const TempDir dir;
+    fs::create_directories(dir.path / "a" / "b" / "target-dir");
 
-    const auto result = klspw::find_dir(dir, "target-dir");
+    const auto result = klspw::find_dir(dir.path, "target-dir");
     REQUIRE(result.has_value());
     CHECK(result->string().ends_with("target-dir"));
-
-    std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("find_dir matches multi-component suffix") {
-    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test2";
-    std::filesystem::create_directories(dir / "src" / "main" / "java");
+    const TempDir dir;
+    fs::create_directories(dir.path / "src" / "main" / "java");
 
-    const auto result = klspw::find_dir(dir, "/main/java");
+    const auto result = klspw::find_dir(dir.path, "/main/java");
     REQUIRE(result.has_value());
     CHECK(result->string().ends_with("/main/java"));
-
-    std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("find_dir returns nullopt when no match") {
-    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test3";
-    std::filesystem::create_directories(dir / "empty");
+    const TempDir dir;
+    fs::create_directories(dir.path / "empty");
 
-    CHECK_FALSE(klspw::find_dir(dir, "nonexistent").has_value());
-
-    std::filesystem::remove_all(dir);
+    CHECK_FALSE(klspw::find_dir(dir.path, "nonexistent").has_value());
 }
 
 TEST_CASE("find_file finds regular file matching suffix") {
-    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test4";
-    std::filesystem::create_directories(dir / "nested");
-    klspw::write_file(dir / "nested" / "lib-1.0-sources.jar", "");
+    const TempDir dir;
+    fs::create_directories(dir.path / "nested");
+    klspw::write_file(dir.path / "nested" / "lib-1.0-sources.jar", "");
 
-    const auto result = klspw::find_file(dir, "-sources.jar");
+    const auto result = klspw::find_file(dir.path, "-sources.jar");
     REQUIRE(result.has_value());
     CHECK(result->string().ends_with("-sources.jar"));
-
-    std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("find_file ignores directories with matching name") {
-    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test5";
-    std::filesystem::create_directories(dir / "fake-sources.jar"); // directory, not file
+    const TempDir dir;
+    fs::create_directories(dir.path / "fake-sources.jar"); // directory, not file
 
-    CHECK_FALSE(klspw::find_file(dir, "-sources.jar").has_value());
-
-    std::filesystem::remove_all(dir);
+    CHECK_FALSE(klspw::find_file(dir.path, "-sources.jar").has_value());
 }
 
 TEST_CASE("find_dir ignores files with matching name") {
-    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test6";
-    std::filesystem::create_directories(dir);
-    klspw::write_file(dir / "target-dir", ""); // file, not directory
+    const TempDir dir;
+    klspw::write_file(dir.path / "target-dir", ""); // file, not directory
 
-    CHECK_FALSE(klspw::find_dir(dir, "target-dir").has_value());
-
-    std::filesystem::remove_all(dir);
+    CHECK_FALSE(klspw::find_dir(dir.path, "target-dir").has_value());
 }
 
 // --- strip_prefixes ---

@@ -10,6 +10,7 @@ klspw/
     files.hpp        # File I/O: read_file, write_file, find_dir, find_file, file_stem
     ranges.hpp       # Range adaptors: to_vector, unique_by, not_in
     describe.hpp     # DescribeContext for human-readable model descriptions
+    validate.hpp     # ValidateContext for collecting validation errors
   src/
     main.cpp         # CLI entry point (CLI11 subcommands)
     strings.cpp      # extract_between implementation
@@ -38,6 +39,8 @@ Config (YAML) -> Pipeline -> GradleRunner (subprocess) -> raw stdout
 ### Key types
 
 - `Config` / `ConfigData` (`config.hpp`) -- loaded config with path resolution. `ConfigData` is the plain glaze-deserializable struct; `Config` wraps it with the config file path and resolves relative paths
+- `StarterConfig` (`config.hpp`) -- generates starter ConfigData for the `init` subcommand
+- `ValidateContext` (`validate.hpp`) -- collects validation errors without throwing; `schema_only` flag controls check depth
 - `GradleRunner` (`gradle_runner.hpp`) -- RAII manager for the temp init script file. Writes on construction, removes on destruction. Callable as `GradleBuildFn`
 - `GradleBuildOutput` / `GradleProject` / `SourceSet` (`gradle.hpp`) -- mirror the JSON emitted by the init script. Each type owns its conversion to workspace model types (Tell Don't Ask)
 - `WorkspaceData` / `ModuleData` / `LibraryData` / `KotlinSettingsData` (`workspace.hpp`) -- match the kotlin-lsp `workspace.json` schema

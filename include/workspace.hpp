@@ -104,7 +104,7 @@ template <> struct glz::meta<klspw::DependencyData> {
 
 // Non-variant types: camel_case auto-converts snake_case fields to camelCase JSON keys.
 template <> struct glz::meta<klspw::ContentRootData> : glz::camel_case {};
-template <> struct glz::meta<klspw::SourceRootData> {};
+template <> struct glz::meta<klspw::SourceRootData> : glz::camel_case {};
 
 namespace klspw {
 

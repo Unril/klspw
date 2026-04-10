@@ -40,9 +40,6 @@ class Pipeline {
             ws.modules.size(),
             ws.libraries.size(),
             ws.kotlin_settings.size());
-        DescribeContext ctx{true, cache_path_markers};
-        ws.describe(ctx);
-        ctx.log(spdlog::level::debug);
         return ws;
     }
 
@@ -51,16 +48,14 @@ class Pipeline {
         const auto ws_path = cfg_.workspace_file();
         require(!ws_path.empty(), "workspace_file not configured in config");
 
-        const auto workspace = build_workspace();
-        workspace.save_json_file(ws_path);
+        build_workspace().save_json_file(ws_path);
         spdlog::info("Wrote {}", ws_path.string());
     }
 
     /// Build workspace and log a full summary at info level (for inspect subcommand).
     void log_workspace() const {
-        const auto ws = build_workspace();
         DescribeContext ctx{true, cache_path_markers};
-        ws.describe(ctx);
+        build_workspace().describe(ctx);
         ctx.log(spdlog::level::info);
     }
 

@@ -19,20 +19,21 @@ just check                        # configure + build + test
 klspw init ./my-project
 klspw init ./my-project -c config.yaml  # write to file instead of stdout
 
-# Run Gradle and write workspace.json
-klspw -c config.yaml generate
+# Run Gradle and write workspace.json (uses ./klspw.yaml by default)
+klspw generate
+klspw -c config.yaml generate           # explicit config path
 
 # Inspect discovered modules and libraries without writing
-klspw -c config.yaml inspect
+klspw inspect
 
 # Validate config paths and build commands
-klspw -c config.yaml validate
+klspw validate
 
 # Save raw Gradle output for debugging
 klspw -c config.yaml generate --save-gradle-output output.txt
 
 # Verbose logging
-klspw --log-level debug -c config.yaml generate
+klspw --log-level debug generate
 ```
 
 ## Configuration
@@ -86,6 +87,7 @@ include/
   files.hpp             # file I/O: read_file, write_file, find_dir, find_file, file_stem
   ranges.hpp            # range adaptors: to_vector, unique_by, not_in
   describe.hpp          # DescribeContext for human-readable model descriptions
+  validate.hpp          # ValidateContext for collecting validation errors
   config.hpp            # config model + YAML loading via glaze
   gradle_runner.hpp     # GradleRunner: init script lifecycle
   gradle.hpp            # Gradle model types + parser + workspace conversion
@@ -98,11 +100,11 @@ src/
   strings.cpp           # extract_between implementation
   files.cpp             # file I/O and filesystem search implementations
 test/
-  test_common.hpp       # shared RAII test fixtures (TempDir, TempConfig)
+  test_common.hpp       # shared RAII test fixtures (TempDir, TempConfig, TempFile)
   smoke.cpp             # basic smoke tests
   config_test.cpp       # config loading tests
   config_validate_test.cpp  # config validation tests
-  config_save_test.cpp  # config YAML round-trip and make_starter tests
+  config_save_test.cpp  # config YAML round-trip and StarterConfig tests
   gradle_test.cpp       # Gradle parsing + workspace conversion
   workspace_json_test.cpp  # workspace model round-trip serialization
   common_test.cpp       # utility function tests

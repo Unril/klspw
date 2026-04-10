@@ -88,3 +88,36 @@ roots:
     const auto cfg = klspw::Config::load_yaml_file(tmp.path);
     CHECK_THROWS_WITH_AS(require_valid(cfg), doctest::Contains("workspace_file"), std::runtime_error);
 }
+
+TEST_CASE("ValidateContext collects multiple errors") {
+    const TempDir root_dir;
+    const auto yaml = std::format(R"(
+version: 99
+workspace_file: ./nonexistent_parent/workspace.json
+roots:
+  - path: {}
+)",
+        root_dir.path.string());
+
+    const TempConfig tmp(yaml);
+
+    // Schema validation catches version error
+    CHECK_THROWS_WITH_AS(klspw::Config::load_yaml_file(tmp.path), doctest::Contains("version"), std::runtime_error);
+}
+
+TEST_CASE("ValidateContext collects filesystem and semantic errors") {
+    const TempConfig tmp(R"(
+version: 1
+roots:
+  - path: ./nonexistent_dir_a
+  - path: ./nonexistent_dir_b
+)");
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
+
+    klspw::ValidateContext ctx;
+    cfg.validate(ctx);
+
+    // Should have at least: 2 missing root paths + no build command
+    CHECK(ctx.errors().size() >= 3);
+    CHECK_THROWS_AS(ctx.throw_if_errors(), std::runtime_error);
+}

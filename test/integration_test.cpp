@@ -5,11 +5,11 @@
 
 namespace {
 
-const fs::path fixtures = "test/fixtures/projects";
+fs::path fixtures() { return "test/fixtures/projects"; }
 
 /// Load config from a fixture project's klspw.yaml and build the workspace.
 klspw::WorkspaceData build_fixture(const std::string& project_name) {
-    const auto config_path = fs::weakly_canonical(fixtures / project_name / "klspw.yaml");
+    const auto config_path = fs::weakly_canonical(fixtures() / project_name / "klspw.yaml");
     auto cfg = klspw::Config::load_yaml_file(config_path);
 
     klspw::GradleRunner runner;
@@ -136,7 +136,7 @@ TEST_CASE("integration: multi-root project merges two Gradle roots") {
 }
 
 TEST_CASE("integration: write_workspace produces valid deserializable JSON") {
-    const auto config_path = fs::weakly_canonical(fixtures / "with-deps" / "klspw.yaml");
+    const auto config_path = fs::weakly_canonical(fixtures() / "with-deps" / "klspw.yaml");
     auto cfg = klspw::Config::load_yaml_file(config_path);
     const auto ws_path = cfg.workspace_file();
 
@@ -144,6 +144,7 @@ TEST_CASE("integration: write_workspace produces valid deserializable JSON") {
     const klspw::Pipeline pipeline(std::move(cfg), std::ref(runner));
     pipeline.write_workspace();
 
+    const TempFile cleanup{ws_path};
     const auto ws = klspw::WorkspaceData::load_json_file(ws_path);
 
     CHECK(ws.modules.size() == 1);
@@ -155,8 +156,4 @@ TEST_CASE("integration: write_workspace produces valid deserializable JSON") {
         CAPTURE(lib.name);
         CHECK(lib.type.value_or("") == "java-imported");
     }
-
-    // Clean up generated workspace.json from fixture dir
-    std::error_code rm_ec;
-    fs::remove(ws_path, rm_ec);
 }

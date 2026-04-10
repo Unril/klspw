@@ -16,13 +16,14 @@ It targets repositories where the default kotlin-lsp project import fails -- whe
 ## CLI subcommands
 
 - `klspw init {root}` -- generate a starter config YAML for a Gradle root
-- `klspw -c config.yaml generate` -- run Gradle, write `workspace.json`
-- `klspw -c config.yaml inspect` -- run Gradle, log discovered modules/libraries
-- `klspw -c config.yaml validate` -- check config paths and build commands
+- `klspw generate` -- run Gradle, write `workspace.json` (uses `./klspw.yaml` by default)
+- `klspw inspect` -- run Gradle, log discovered modules/libraries
+- `klspw validate` -- check config paths and build commands
+- `-c` flag overrides the config path (file or directory)
 
 ## Config file
 
-The config file (`workspace-kotlin-lsp-config.yaml`) defines:
+The config file (default name: `klspw.yaml`) defines:
 
 - Global and per-root build commands (e.g., `./gradlew`)
 - Gradle root project paths (resolved relative to config file directory)

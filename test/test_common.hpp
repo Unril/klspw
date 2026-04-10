@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <string>
 
-#include "common.hpp"
 #include "files.hpp"
 
 namespace fs = std::filesystem;
@@ -51,4 +50,21 @@ struct TempDir {
     TempDir& operator=(const TempDir&) = delete;
     TempDir(TempDir&&) = delete;
     TempDir& operator=(TempDir&&) = delete;
+};
+
+/// RAII guard that removes a single file on destruction.
+struct TempFile {
+    fs::path path;
+
+    explicit TempFile(fs::path p) : path{std::move(p)} {}
+
+    ~TempFile() {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+
+    TempFile(const TempFile&) = delete;
+    TempFile& operator=(const TempFile&) = delete;
+    TempFile(TempFile&&) = delete;
+    TempFile& operator=(TempFile&&) = delete;
 };
