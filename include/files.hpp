@@ -8,8 +8,10 @@ namespace klspw {
 
 // --- File I/O ---
 
+/// Read entire file into a string. Throws on empty path, missing file, or read failure.
 string read_file(const fs::path& path);
 
+/// Write content to a file, creating or truncating it. Throws on empty path or write failure.
 void write_file(const fs::path& path, string_view content);
 
 // --- Filesystem search ---

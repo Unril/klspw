@@ -4,8 +4,8 @@
 
 #include <doctest/doctest.h>
 
-#include "gradle_runner.hpp"
 #include "gradle.hpp"
+#include "gradle_runner.hpp"
 #include "test_common.hpp"
 
 namespace fs = std::filesystem;

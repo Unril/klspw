@@ -161,6 +161,7 @@ class Config {
     const fs::path& config_file() const { return config_file_; }
     const fs::path& config_dir() const { return config_dir_; }
 
+    /// Build a human-readable summary of the config for logging.
     strings describe(bool verbose = true) const {
         DescribeContext ctx{verbose};
         ctx.add(format("Config: {}", config_file_.string()));

@@ -11,6 +11,7 @@
 
 #include "common.hpp"
 #include "files.hpp"
+#include "strings.hpp"
 
 namespace klspw {
 
@@ -22,7 +23,6 @@ class SourceResolver {
   public:
     /// Package cache layout constants.
     static constexpr string_view pkg_cache_marker = "/DEV.STD.PTHREAD/";
-    static constexpr string_view pkg_cache_marker_dir = "DEV.STD.PTHREAD";
     static constexpr string_view pkg_cache_source_dir = "generic-flavor";
 
     explicit SourceResolver(string_view jar) : jar_path_{jar} {
@@ -30,7 +30,7 @@ class SourceResolver {
         if (marker_pos != string_view::npos) {
             const auto base = fs::path{jar.substr(0, marker_pos)};
             pkg_source_root_ = base / pkg_cache_source_dir;
-            pkg_marker_dir_ = base / pkg_cache_marker_dir;
+            pkg_marker_dir_ = base / trim(pkg_cache_marker, "/");
         }
     }
 

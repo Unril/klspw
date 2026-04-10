@@ -9,8 +9,8 @@
 
 #include "config.hpp"
 #include "files.hpp"
-#include "gradle_runner.hpp"
 #include "gradle.hpp"
+#include "gradle_runner.hpp"
 #include "strings.hpp"
 #include "workspace.hpp"
 

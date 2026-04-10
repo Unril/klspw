@@ -63,6 +63,8 @@ struct SourceSet {
         return source_roots | not_in(java_source_roots) | not_in(resources_roots) | to_vector();
     }
 
+    /// Build a LibraryData with source jar attachment.
+    /// Prefers Gradle-resolved source mapping, falls back to SourceResolver filesystem discovery.
     LibraryData library_from_jar_with_sources(string_view jar) const {
         vector<LibraryRootData> roots{{.path = string{jar}}};
         // Prefer Gradle-resolved source jar, fall back to filesystem discovery.
@@ -74,12 +76,13 @@ struct SourceSet {
         return {.name = file_stem(jar), .type = "java-imported", .roots = std::move(roots)};
     }
 
+    /// Build a LibraryData without source attachment. Type "java-imported" is required by kotlin-lsp.
     static LibraryData library_from_jar(string_view jar) {
         return {.name = file_stem(jar), .type = "java-imported", .roots = {{.path = string{jar}}}};
     }
 
-    // --- Workspace model conversion ---
-
+    /// Convert source_roots into typed SourceRootData entries.
+    /// Resource dirs are excluded from the source pass and added separately as resource-type roots.
     vector<SourceRootData> to_source_roots() const {
         const auto src_type = is_test() ? "java-test"s : "java-source"s;
         const auto res_type = is_test() ? "java-test-resource"s : "java-resource"s;
@@ -91,15 +94,19 @@ struct SourceSet {
         return roots;
     }
 
+    /// Collect libraries from compile classpath with source jar attachment.
     vector<LibraryData> collect_libraries_with_sources() const {
         auto to_lib = [&](const auto& jar) { return library_from_jar_with_sources(jar); };
         return compile_classpath | v::transform(to_lib) | to_vector();
     }
 
+    /// Collect libraries from compile classpath without source attachment.
     vector<LibraryData> collect_libraries() const {
         return compile_classpath | v::transform(library_from_jar) | to_vector();
     }
 
+    /// Collect library dependency references from compile classpath.
+    /// Scope is inferred from the source set name (test vs compile).
     vector<LibraryDep> collect_library_deps() const {
         const auto scope = is_test() ? DependencyScope::test : DependencyScope::compile;
         auto to_dep = [&](const auto& jar) -> LibraryDep { return {.name = file_stem(jar), .scope = scope}; };
@@ -142,6 +149,7 @@ struct GradleProject {
         ctx.describe_each(source_sets);
     }
 
+    /// Return source sets to include in the workspace. Filters out test sets when disabled.
     vector<SourceSet> active_sets(const GenerationOptions& opts) const {
         if (opts.include_tests) {
             return source_sets;
@@ -149,6 +157,8 @@ struct GradleProject {
         return source_sets | v::filter(std::not_fn(&SourceSet::is_test)) | to_vector();
     }
 
+    /// Convert this project into a ModuleData with content roots and dependencies.
+    /// Dependencies include library deps (deduped by name) plus InheritedSdk and ModuleSource.
     ModuleData to_module(const vector<SourceSet>& sets) const {
         auto source_roots = sets | v::transform(&SourceSet::to_source_roots) | v::join | to_vector();
         vector<ContentRootData> content_roots;
@@ -168,6 +178,8 @@ struct GradleProject {
         };
     }
 
+    /// Build KotlinSettingsData for this project.
+    /// compiler_arguments format: J-prefixed JSON, e.g. J{"jvmTarget":"21"}.
     KotlinSettingsData to_kotlin_settings(const string& compiler_args_json, const vector<SourceSet>& sets) const {
         const auto mod_name = module_name();
         return {
@@ -216,6 +228,8 @@ struct GradleBuildOutput {
         return ctx.take_lines();
     }
 
+    /// Convert all active projects into a merged WorkspaceData.
+    /// Libraries are deduplicated by name (first occurrence wins).
     WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
         auto active_projects = projects | v::filter(std::not_fn(&GradleProject::is_skipped)) | to_vector();
 
