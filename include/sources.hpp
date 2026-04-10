@@ -51,7 +51,7 @@ class SourceResolver {
     fs::path pkg_source_root_; // empty if jar is not in a package cache
     fs::path pkg_marker_dir_; // empty if jar is not in a package cache
 
-    static constexpr auto to_string = [](const fs::path& p) { return p.string(); };
+    static constexpr auto path_to_string = [](const fs::path& p) { return p.string(); };
 
     bool is_pkg_cache_jar() const { return !pkg_source_root_.empty(); }
 
@@ -63,13 +63,13 @@ class SourceResolver {
             return nullopt;
         }
         if (fs::is_directory(pkg_source_root_)) {
-            if (auto src = find_dir(pkg_source_root_, "-sources").transform(to_string)) {
+            if (auto src = find_dir(pkg_source_root_, "-sources").transform(path_to_string)) {
                 return src;
             }
-            if (auto src = find_file(pkg_source_root_, "-sources.jar").transform(to_string)) {
+            if (auto src = find_file(pkg_source_root_, "-sources.jar").transform(path_to_string)) {
                 return src;
             }
-            if (auto src = find_dir(pkg_source_root_, "/src/main/java").transform(to_string)) {
+            if (auto src = find_dir(pkg_source_root_, "/src/main/java").transform(path_to_string)) {
                 return src;
             }
             if (const auto p = pkg_source_root_ / "src" / "main";

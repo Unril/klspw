@@ -126,10 +126,9 @@ class Config {
         spdlog::info("Loading config: {}", resolved.string());
         auto data = ConfigData::from_yaml(read_file(resolved));
         auto cfg = Config{std::move(data), resolved};
-        spdlog::info("Config loaded: {} root(s), jvm_target={}, workspace_file={}",
-            cfg.roots().size(),
-            cfg.jvm_target(),
-            cfg.data_.workspace_file.empty() ? "(not set)" : cfg.data_.workspace_file);
+        for (const auto& line : cfg.describe()) {
+            spdlog::info("{}", line);
+        }
         return cfg;
     }
 
@@ -158,6 +157,29 @@ class Config {
 
     const fs::path& config_file() const { return config_file_; }
     const fs::path& config_dir() const { return config_dir_; }
+
+    strings describe(bool verbose = true) const {
+        strings out;
+        out.push_back(format("Config: {}", config_file_.string()));
+        out.push_back(format("  {} root(s), jvm_target={}, workspace_file={}",
+            roots().size(),
+            jvm_target(),
+            data_.workspace_file.empty() ? "(not set)" : data_.workspace_file));
+        if (!verbose) {
+            return out;
+        }
+        if (data_.build) {
+            out.push_back(format("  build: {} {}", join(data_.build->command), join(data_.build->gradle_args)));
+        }
+        for (const auto& root : data_.roots) {
+            auto line = format("  root: {}", root_path(root).string());
+            if (root.build) {
+                line += format(" (build: {})", join(root.build->command));
+            }
+            out.push_back(std::move(line));
+        }
+        return out;
+    }
 
     // --- Forwarded accessors ---
     int version() const { return data_.version; }

@@ -124,6 +124,21 @@ struct ModuleData {
     vector<DependencyData> dependencies; ///< Libraries, modules, SDKs this module depends on.
     vector<ContentRootData> content_roots; ///< Root directories containing source code.
     vector<FacetData> facets; ///< Framework facets (Spring, JPA). Usually empty.
+
+    void describe(strings& out, bool verbose) const {
+        const auto lib_deps =
+            r::count_if(dependencies, [](const auto& d) { return std::holds_alternative<LibraryDep>(d); });
+        out.push_back(format("  {} ({} deps, {} content root(s))", name, lib_deps, content_roots.size()));
+        if (!verbose) {
+            return;
+        }
+        for (const auto& cr : content_roots) {
+            out.push_back(format("    root: {} ({} source root(s))", cr.path, cr.source_roots.size()));
+            for (const auto& sr : cr.source_roots) {
+                out.push_back(format("      {} [{}]", sr.path, sr.type));
+            }
+        }
+    }
 };
 
 /// A single JAR or directory within a library's classpath.
@@ -146,6 +161,23 @@ struct LibraryData {
     vector<LibraryRootData> roots; ///< Classpath entries (CLASSES, SOURCES, JAVADOC jars).
     strings excluded_roots; ///< Paths to exclude from classpath.
     optional<XmlElement> properties; ///< Maven coordinates or other metadata as XML.
+
+    /// Append description lines. `path_markers` controls path shortening for cache jars.
+    void describe(strings& out, bool verbose, string_views path_markers, set<string>& stripped_prefixes) const {
+        out.push_back(format("  {} ({} root(s))", name, roots.size()));
+        if (!verbose) {
+            return;
+        }
+        for (const auto& root : roots) {
+            auto [display, stripped] = strip_prefixes(root.path, path_markers);
+            if (!stripped.empty()) {
+                stripped_prefixes.emplace(stripped);
+                out.push_back(format("    .../{}  [{}]", display, root.type));
+            } else {
+                out.push_back(format("    {}  [{}]", display, root.type));
+            }
+        }
+    }
 };
 
 /// A single classpath entry within an SDK.
@@ -202,6 +234,13 @@ struct KotlinSettingsData {
     strings external_system_run_tasks; ///< Build system tasks to run.
     int version = 5; ///< Settings schema version.
     bool flush_needed = false; ///< Whether settings refresh is needed.
+
+    void describe(strings& out, [[maybe_unused]] bool verbose) const {
+        out.push_back(format("  module={}, {} source root(s), {} pure-kotlin folder(s)",
+            module,
+            source_roots.size(),
+            pure_kotlin_source_folders.size()));
+    }
 };
 
 /// Java compiler and output settings per module.
@@ -244,6 +283,33 @@ struct WorkspaceData {
                 libraries.push_back(std::move(lib));
             }
         }
+    }
+
+    /// Build a human-readable description of the workspace.
+    /// `path_markers` controls path shortening for cache jar paths.
+    strings describe(bool verbose = true, string_views path_markers = {}) const {
+        strings out;
+
+        out.push_back(format("Modules ({}):", modules.size()));
+        for (const auto& mod : modules) {
+            mod.describe(out, verbose);
+        }
+
+        out.push_back(format("Libraries ({}):", libraries.size()));
+        set<string> cache_prefixes;
+        for (const auto& lib : libraries) {
+            lib.describe(out, verbose, path_markers, cache_prefixes);
+        }
+        for (const auto& prefix : cache_prefixes) {
+            out.push_back(format("  (cache: {})", prefix));
+        }
+
+        out.push_back(format("Kotlin settings ({}):", kotlin_settings.size()));
+        for (const auto& ks : kotlin_settings) {
+            ks.describe(out, verbose);
+        }
+
+        return out;
     }
 };
 

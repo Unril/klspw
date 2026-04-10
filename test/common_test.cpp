@@ -288,42 +288,42 @@ TEST_CASE("find_dir ignores files with matching name") {
 // --- strip_prefixes ---
 
 TEST_CASE("strip_prefixes strips at first matching marker") {
-    constexpr std::array markers = {"/caches/", "/packages/"};
+    constexpr std::array<std::string_view, 2> markers = {"/caches/", "/packages/"};
     const auto [suffix, prefix] = klspw::strip_prefixes("/Users/me/.gradle/caches/modules/lib.jar", markers);
     CHECK(suffix == "modules/lib.jar");
     CHECK(prefix == "/Users/me/.gradle/caches/");
 }
 
 TEST_CASE("strip_prefixes matches packages marker") {
-    constexpr std::array markers = {"/caches/", "/packages/"};
+    constexpr std::array<std::string_view, 2> markers = {"/caches/", "/packages/"};
     const auto [suffix, prefix] = klspw::strip_prefixes("/vol/pkg-cache/packages/Foo/Foo-1.0/lib.jar", markers);
     CHECK(suffix == "Foo/Foo-1.0/lib.jar");
     CHECK(prefix == "/vol/pkg-cache/packages/");
 }
 
 TEST_CASE("strip_prefixes returns full path when no marker matches") {
-    constexpr std::array markers = {"/caches/", "/packages/"};
+    constexpr std::array<std::string_view, 2> markers = {"/caches/", "/packages/"};
     const auto [suffix, prefix] = klspw::strip_prefixes("/home/user/project/build/lib.jar", markers);
     CHECK(suffix == "/home/user/project/build/lib.jar");
     CHECK(prefix.empty());
 }
 
 TEST_CASE("strip_prefixes with empty markers returns full path") {
-    const std::vector<std::string_view> markers;
+    constexpr std::array<std::string_view, 0> markers = {};
     const auto [suffix, prefix] = klspw::strip_prefixes("/some/path", markers);
     CHECK(suffix == "/some/path");
     CHECK(prefix.empty());
 }
 
 TEST_CASE("strip_prefixes prefers first matching marker") {
-    constexpr std::array markers = {"/a/", "/b/"};
+    constexpr std::array<std::string_view, 2> markers = {"/a/", "/b/"};
     const auto [suffix, prefix] = klspw::strip_prefixes("/root/a/b/file", markers);
     CHECK(suffix == "b/file");
     CHECK(prefix == "/root/a/");
 }
 
 TEST_CASE("strip_prefixes with marker at start") {
-    constexpr std::array markers = {"/caches/"};
+    constexpr std::array<std::string_view, 1> markers = {"/caches/"};
     const auto [suffix, prefix] = klspw::strip_prefixes("/caches/lib.jar", markers);
     CHECK(suffix == "lib.jar");
     CHECK(prefix == "/caches/");

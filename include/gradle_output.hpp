@@ -117,8 +117,15 @@ struct SourceSet {
     }
 
     vector<LibraryDep> collect_library_deps() const {
-        return compile_classpath | v::transform([&](const auto& jar) { return library_dep_from_jar(jar); }) |
-               to_vector();
+        auto to_dep = [&](const auto& jar) { return library_dep_from_jar(jar); };
+        return compile_classpath | v::transform(to_dep) | to_vector();
+    }
+
+    void describe(strings& out) const {
+        out.push_back(format("    source set '{}': {} source root(s), {} compile classpath jar(s)",
+            name,
+            source_roots.size(),
+            compile_classpath.size()));
     }
 };
 
@@ -140,6 +147,18 @@ struct GradleProject {
 
     bool is_skipped() const { return skip_reason.has_value(); }
     string module_name() const { return fs::path{project_dir}.filename().string(); }
+
+    void describe(strings& out) const {
+        if (is_skipped()) {
+            out.push_back(format("  {} [SKIPPED: {}]", project_path, *skip_reason));
+            return;
+        }
+        out.push_back(
+            format("  {} ({} source set(s), {} plugin(s))", project_path, source_sets.size(), plugins.size()));
+        for (const auto& ss : source_sets) {
+            ss.describe(out);
+        }
+    }
 
     vector<SourceSet> active_sets(const GenerationOptions& opts) const {
         if (opts.include_tests) {
@@ -200,24 +219,46 @@ struct GradleBuildOutput {
     string root_project; ///< Absolute path to the Gradle root project directory.
     vector<GradleProject> projects; ///< All discovered (sub)projects, including skipped ones.
 
+    /// Parse a JSON string into a GradleBuildOutput. Ignores unknown keys.
+    static GradleBuildOutput from_json(string_view json_str) {
+        GradleBuildOutput output;
+        const auto ec = glz::read<ws_read_opts>(output, json_str);
+        require(!ec, "Failed to parse Gradle JSON: {}", [&] { return glz::format_error(ec, json_str); });
+        return output;
+    }
+
+    /// Extract JSON from raw Gradle stdout (between KLSPW_BEGIN/KLSPW_END) and parse it.
+    static GradleBuildOutput from_raw_output(string_view raw_output) {
+        auto json_str = extract_between(raw_output, {.open = "KLSPW_BEGIN", .close = "KLSPW_END"});
+        require(json_str.has_value(), "KLSPW_BEGIN/KLSPW_END delimiters not found in Gradle output");
+        return from_json(*json_str);
+    }
+
     size_t active_project_count() const {
         return static_cast<size_t>(r::count_if(projects, std::not_fn(&GradleProject::is_skipped)));
     }
 
-    auto active_projects() const { return projects | v::filter(std::not_fn(&GradleProject::is_skipped)); }
+    strings describe() const {
+        strings out;
+        out.push_back(format("{} project(s), {} active", projects.size(), active_project_count()));
+        for (const auto& proj : projects) {
+            proj.describe(out);
+        }
+        return out;
+    }
 
     WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
-        auto active = active_projects() | to_vector();
+        auto active_projects = projects | v::filter(std::not_fn(&GradleProject::is_skipped)) | to_vector();
 
         auto to_active_sets = [&](const auto& p) { return p.active_sets(options); };
-        auto sets_per_project = active | v::transform(to_active_sets) | to_vector();
+        auto sets_per_project = active_projects | v::transform(to_active_sets) | to_vector();
 
         auto to_libs = [&](const auto& ss) {
             return options.attach_sources ? ss.collect_libraries_with_sources() : ss.collect_libraries();
         };
 
         WorkspaceData ws;
-        for (const auto& [proj, sets] : v::zip(active, sets_per_project)) {
+        for (const auto& [proj, sets] : v::zip(active_projects, sets_per_project)) {
             ws.modules.push_back(proj.to_module(sets));
             ws.kotlin_settings.push_back(proj.to_kotlin_settings(compiler_args_json, sets));
             ws.libraries.append_range(sets | v::transform(to_libs) | v::join | to_vector());
@@ -227,6 +268,7 @@ struct GradleBuildOutput {
         ws.libraries = std::move(ws.libraries) | unique_by(&LibraryData::name);
 
         if (options.attach_sources) {
+            // Libraries with >1 root have at least one SOURCES entry (CLASSES is always first).
             const auto with_sources =
                 static_cast<size_t>(r::count_if(ws.libraries, [](const auto& lib) { return lib.roots.size() > 1; }));
             spdlog::info("  sources attached to {}/{} libraries", with_sources, ws.libraries.size());
@@ -235,28 +277,6 @@ struct GradleBuildOutput {
         return ws;
     }
 };
-
-// --- Gradle output parsing ---
-
-inline constexpr string_view gradle_begin_delimiter = "KLSPW_BEGIN";
-inline constexpr string_view gradle_end_delimiter = "KLSPW_END";
-
-inline string extract_gradle_json(string_view raw_output) {
-    auto result = extract_between(raw_output, {.open = gradle_begin_delimiter, .close = gradle_end_delimiter});
-    require(result.has_value(),
-        "{}/{} delimiters not found in Gradle output",
-        gradle_begin_delimiter,
-        gradle_end_delimiter);
-    return std::move(*result);
-}
-
-/// Parse a JSON string into a GradleBuildOutput. Uses ws_read_opts (ignores unknown keys).
-inline GradleBuildOutput parse_gradle_output(string_view json_str) {
-    GradleBuildOutput output;
-    const auto ec = glz::read<ws_read_opts>(output, json_str);
-    require(!ec, "Failed to parse Gradle JSON: {}", [&] { return glz::format_error(ec, json_str); });
-    return output;
-}
 
 } // namespace klspw
 

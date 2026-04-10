@@ -45,7 +45,7 @@ optional<fs::path> find_entry(const fs::path& root, string_view suffix, EntryChe
     std::error_code ec;
     for (const auto& entry :
         fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
-        if (std::mem_fn(check)(entry, ec) && entry.path().native().ends_with(suffix)) {
+        if ((entry.*check)(ec) && entry.path().native().ends_with(suffix)) {
             return entry.path();
         }
     }

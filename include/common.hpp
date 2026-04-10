@@ -11,6 +11,7 @@
 #include <optional>
 #include <ranges>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -45,6 +46,7 @@ namespace fs = std::filesystem;
 using strings = vector<string>;
 using opt_string = optional<string>;
 using string_set = std::unordered_set<string>;
+using string_views = std::span<const std::string_view>;
 
 /// Ordered map with O(1) lookup and deterministic iteration order.
 /// Used for all string-keyed maps in model types (serialized to JSON objects).
@@ -180,13 +182,11 @@ inline auto not_in(const string_set& excluded) {
 }
 
 /// Strip a known prefix from a path for compact display.
-/// Searches for any of the `markers` in `path`. If found, returns the suffix starting at the
-/// marker and the prefix before it. If no marker matches, returns the path unchanged with empty prefix.
-template <r::input_range Markers>
-    requires std::constructible_from<string_view, r::range_reference_t<Markers>>
-std::pair<string_view, string_view> strip_prefixes(string_view path, const Markers& markers) {
-    for (const auto& m : markers) {
-        const string_view marker{m};
+/// Searches for any of the `markers` in `path`. If found, returns the suffix after the
+/// marker and the prefix up to and including the marker. If no marker matches, returns
+/// the path unchanged with empty prefix.
+inline std::pair<string_view, string_view> strip_prefixes(string_view path, string_views markers) {
+    for (const auto marker : markers) {
         if (const auto pos = path.find(marker); pos != string_view::npos) {
             return {path.substr(pos + marker.size()), path.substr(0, pos + marker.size())};
         }
