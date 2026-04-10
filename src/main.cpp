@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) try {
     auto cfg = klspw::Config::load_yaml_file(config_path);
 
     if (val->parsed()) {
-        cfg.validate();
+        klspw::ValidateContext::require_valid(cfg);
         spdlog::info("Config valid.");
         return 0;
     }

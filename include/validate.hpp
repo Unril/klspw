@@ -1,10 +1,13 @@
 #pragma once
 
-/// Validation context for collecting errors across a config hierarchy.
+/// Validation context for collecting errors across a type hierarchy.
 ///
-/// ValidateContext accumulates error messages instead of throwing on the first one.
-/// Types call validate(ctx) to check their fields and delegate to children.
-/// schema_only controls whether semantic checks run.
+/// Rules:
+///   - validate() always accepts ValidateContext& -- never creates its own
+///   - validate() always calls validate on all children (via ctx.validate)
+///   - validate() never throws -- it only records errors via ctx.check
+///   - throwing is done by the caller via ctx.throw_if_errors()
+///   - schema_only controls whether semantic checks (beyond required fields) run
 
 #include "common.hpp"
 #include "strings.hpp"
@@ -60,6 +63,13 @@ class ValidateContext {
             return;
         }
         throw runtime_error(join(errors_, "; "));
+    }
+
+    /// Validate an item and throw if errors found. Convenience for callers.
+    template <Validatable T> static void require_valid(const T& item, bool schema_only = false) {
+        ValidateContext ctx{schema_only};
+        item.validate(ctx);
+        ctx.throw_if_errors();
     }
 
   private:

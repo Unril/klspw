@@ -6,6 +6,12 @@
 #include "config.hpp"
 #include "test_common.hpp"
 
+namespace {
+
+void require_valid(const klspw::Config& cfg) { klspw::ValidateContext::require_valid(cfg); }
+
+} // namespace
+
 // --- Config::validate ---
 
 TEST_CASE("validate throws on missing root path") {
@@ -17,7 +23,7 @@ roots:
   - path: ./nonexistent_dir
 )");
     const auto cfg = klspw::Config::load_yaml_file(tmp.path);
-    CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("does not exist"), std::runtime_error);
+    CHECK_THROWS_WITH_AS(require_valid(cfg), doctest::Contains("does not exist"), std::runtime_error);
 }
 
 TEST_CASE("validate succeeds with existing root path") {
@@ -33,7 +39,7 @@ roots:
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::load_yaml_file(tmp.path);
-    CHECK_NOTHROW(cfg.validate());
+    CHECK_NOTHROW(require_valid(cfg));
 }
 
 TEST_CASE("validate throws on missing build command") {
@@ -47,7 +53,7 @@ roots:
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::load_yaml_file(tmp.path);
-    CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("no build command"), std::runtime_error);
+    CHECK_THROWS_WITH_AS(require_valid(cfg), doctest::Contains("no build command"), std::runtime_error);
 }
 
 TEST_CASE("validate accepts per-root build command without global") {
@@ -63,7 +69,7 @@ roots:
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::load_yaml_file(tmp.path);
-    CHECK_NOTHROW(cfg.validate());
+    CHECK_NOTHROW(require_valid(cfg));
 }
 
 TEST_CASE("validate throws on missing workspace_file parent") {
@@ -80,5 +86,5 @@ roots:
 
     const TempConfig tmp(yaml);
     const auto cfg = klspw::Config::load_yaml_file(tmp.path);
-    CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("workspace_file"), std::runtime_error);
+    CHECK_THROWS_WITH_AS(require_valid(cfg), doctest::Contains("workspace_file"), std::runtime_error);
 }

@@ -100,8 +100,8 @@ TEST_CASE("StarterConfig respects custom jvm_target") {
 
 TEST_CASE("StarterConfig output passes ConfigData::validate") {
     const TempDir root_dir;
-    CHECK_NOTHROW(
-        klspw::StarterConfig{root_dir.path}.set_config_path(root_dir.path.parent_path()).to_config_data().validate());
+    const auto data = klspw::StarterConfig{root_dir.path}.set_config_path(root_dir.path.parent_path()).to_config_data();
+    CHECK_NOTHROW(klspw::ValidateContext::require_valid(data));
 }
 
 TEST_CASE("StarterConfig throws on nonexistent root") {
@@ -114,7 +114,7 @@ TEST_CASE("StarterConfig without config_path resolves root relative to cwd") {
     const auto data = klspw::StarterConfig{fs::temp_directory_path()}.to_config_data();
 
     CHECK(data.roots[0].path.starts_with("./"));
-    CHECK_NOTHROW(data.validate());
+    CHECK_NOTHROW(klspw::ValidateContext::require_valid(data));
 }
 
 TEST_CASE("StarterConfig save_yaml_file throws without config_path") {

@@ -110,17 +110,9 @@ struct ConfigData {
         ctx.check(!roots.empty(), "Config missing required field: roots");
         ctx.validate(build);
         ctx.validate(roots);
-        if (ctx.schema_only()) {
-            return;
+        if (!ctx.schema_only()) {
+            ctx.check(has_any_build_command(), "no build command configured (global or per-root)");
         }
-        ctx.check(has_any_build_command(), "no build command configured (global or per-root)");
-    }
-
-    /// Convenience: full validation, throws on errors.
-    void validate() const {
-        ValidateContext ctx;
-        validate(ctx);
-        ctx.throw_if_errors();
     }
 
     /// Resolve the effective build config for a root.
@@ -167,9 +159,7 @@ struct ConfigData {
         constexpr glz::opts yaml_opts{.format = glz::YAML, .error_on_unknown_keys = false};
         const auto ec = glz::read<yaml_opts>(data, yaml_str);
         require(!ec, "Failed to parse config YAML: {}", [&] { return glz::format_error(ec, yaml_str); });
-        ValidateContext vctx{true};
-        data.validate(vctx);
-        vctx.throw_if_errors();
+        ValidateContext::require_valid(data, true);
         return data;
     }
 };
@@ -211,7 +201,7 @@ class StarterConfig {
 
     StarterConfig& set_config_path(const fs::path& path) {
         config_path_ = path;
-        config_dir_ = path.empty() ? fs::weakly_canonical(fs::current_path()) : resolve_config_dir(path);
+        config_dir_ = fs::weakly_canonical(resolve_config_path(path)).parent_path();
         return *this;
     }
 
@@ -241,15 +231,8 @@ class StarterConfig {
   private:
     fs::path root_path_;
     fs::path config_path_;
-    fs::path config_dir_ = fs::weakly_canonical(fs::current_path());
+    fs::path config_dir_ = fs::weakly_canonical(resolve_config_path({})).parent_path();
     string jvm_target_ = "21";
-
-    static fs::path resolve_config_dir(const fs::path& config_path) {
-        if (fs::is_directory(config_path)) {
-            return fs::weakly_canonical(config_path);
-        }
-        return fs::weakly_canonical(config_path).parent_path();
-    }
 };
 
 /// Loaded and validated config. Resolves relative paths against config_dir on demand.
@@ -294,9 +277,8 @@ class Config {
         data_.describe(ctx);
     }
 
-    /// Check config data, resolved paths, and build commands. Throws on first issue found.
-    void validate() const {
-        ValidateContext ctx;
+    /// Validate config data, resolved paths, and build commands.
+    void validate(ValidateContext& ctx) const {
         data_.validate(ctx);
 
         if (const auto ws_file = workspace_file(); !ws_file.empty()) {
@@ -309,8 +291,6 @@ class Config {
             const auto resolved = root_path(root);
             ctx.check(fs::is_directory(resolved), format("root path does not exist: {}", resolved.string()));
         }
-
-        ctx.throw_if_errors();
     }
 
   private:
