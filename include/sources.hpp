@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include "common.hpp"
+#include "files.hpp"
 
 namespace klspw {
 

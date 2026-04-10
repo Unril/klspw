@@ -63,9 +63,7 @@ int main(int argc, char* argv[]) try {
 
     std::string gradle_output_path;
     for (auto* sub : {gen, insp}) {
-        sub->add_option("--save-gradle-output",
-            gradle_output_path,
-            "Save raw Gradle output to a file (path) or directory (uses default filename per root)");
+        sub->add_option("--save-gradle-output", gradle_output_path, "Save raw Gradle output to a file");
     }
 
     CLI11_PARSE(app, argc, argv);

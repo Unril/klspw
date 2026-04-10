@@ -1,15 +1,14 @@
 #pragma once
 
-/// Shared type aliases, namespace imports, string utilities, and glaze opts.
+/// Shared type aliases, namespace imports, glaze opts, and preconditions.
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint> // IWYU pragma: keep
 #include <filesystem> // IWYU pragma: keep
 #include <format>
 #include <functional>
 #include <optional>
-#include <ranges>
+#include <ranges> // IWYU pragma: keep (namespace aliases r, v)
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -35,7 +34,9 @@ using std::runtime_error;
 using std::set;
 using std::size_t;
 using std::string;
+using std::string_literals::operator""s;
 using std::string_view;
+using std::string_view_literals::operator""sv;
 using std::variant;
 using std::vector;
 
@@ -52,15 +53,6 @@ using string_views = std::span<const std::string_view>;
 /// Used for all string-keyed maps in model types (serialized to JSON objects).
 template <typename V> using string_map = glz::ordered_map<string, V>;
 
-/// Pipe adaptor: range | to_vector() materializes into a vector.
-template <typename T = void> constexpr auto to_vector() {
-    if constexpr (std::is_void_v<T>) {
-        return r::to<vector>();
-    } else {
-        return r::to<vector<T>>();
-    }
-}
-
 // --- Glaze opts ---
 
 /// Write opts: write null optionals as null (kotlin-lsp requires them), pretty-print for diffable output.
@@ -74,28 +66,6 @@ inline constexpr ws_write_opts_t ws_write_opts{};
 
 /// Read opts: ignore unknown keys for forward-compat.
 inline constexpr glz::opts ws_read_opts{.error_on_unknown_keys = false};
-
-// --- String utilities ---
-
-/// Trim leading/trailing whitespace (space, \n, \r) from a string_view.
-/// Tabs are intentionally not trimmed -- Gradle output uses spaces/newlines.
-inline string_view trim(string_view sv) {
-    constexpr string_view ws = " \n\r";
-    const auto start = sv.find_first_not_of(ws);
-    if (start == string_view::npos) {
-        return {};
-    }
-    return sv.substr(start, sv.find_last_not_of(ws) - start + 1);
-}
-
-/// Join any range of string-like elements with a separator (C++23).
-template <r::input_range R>
-    requires std::convertible_to<r::range_value_t<R>, string_view>
-inline string join(R&& parts, string_view sep = " ") {
-    return std::forward<R>(parts) | v::join_with(sep) | r::to<string>();
-}
-
-inline string join(std::initializer_list<string_view> parts, string_view sep = " ") { return join<>(parts, sep); }
 
 // --- Preconditions ---
 
@@ -125,107 +95,11 @@ template <typename T> using eval_t = std::remove_cvref_t<decltype(eval(std::decl
 
 /// Throw runtime_error if condition is false. Accepts std::format args.
 /// Args may be values, zero-arg callables, fs::path, or error_code (all handled by detail::eval).
-///
-/// Usage:
-///   require(x > 0, "Expected positive, got {}", x);
-///   require(fs::exists(p), "Not found: {}", p);  // fs::path auto-converts to string
-///   require(ready, "Timeout after {}ms", [&] { return elapsed.count(); });  // lazy eval
 template <typename... Args>
 inline void require(bool condition, std::format_string<detail::eval_t<Args>...> fmt, Args&&... args) {
     if (!condition) {
         throw runtime_error(format(fmt, detail::eval(std::forward<Args>(args))...));
     }
-}
-
-/// Dedup elements by key, keeping first occurrence. Pipe adaptor: range | unique_by(proj)
-namespace detail {
-
-/// A type T is hashable if std::hash<T>{}(val) produces a std::size_t.
-template <typename T>
-concept Hashable = requires(T val) {
-    { std::hash<T>{}(val) } -> std::convertible_to<std::size_t>;
-};
-
-template <typename Proj> struct unique_by_adaptor : r::range_adaptor_closure<unique_by_adaptor<Proj>> {
-    Proj proj;
-
-    template <r::input_range R>
-        requires Hashable<std::remove_cvref_t<std::invoke_result_t<Proj, const r::range_value_t<R>&>>>
-    auto operator()(R&& range) const {
-        using Val = r::range_value_t<R>;
-        using Key = std::remove_cvref_t<std::invoke_result_t<Proj, const Val&>>;
-        std::unordered_set<Key> seen;
-        vector<Val> result;
-        for (auto&& elem : std::forward<R>(range)) {
-            if (seen.insert(std::invoke(proj, elem)).second) {
-                result.push_back(std::forward<decltype(elem)>(elem));
-            }
-        }
-        return result;
-    }
-};
-
-} // namespace detail
-
-/// range | unique_by(&Type::field) -- dedup keeping first occurrence per key.
-template <typename Proj = std::identity>
-    requires(!r::input_range<Proj>)
-auto unique_by(Proj proj = {}) {
-    return detail::unique_by_adaptor<Proj>{.proj = std::move(proj)};
-}
-
-/// Returns a filter that excludes elements present in the given set.
-/// Usage: source_roots | not_in(resources_roots) | ...
-/// The returned view captures excluded by reference -- caller must ensure the set outlives the view.
-inline auto not_in(const string_set& excluded) {
-    return v::filter([&excluded](const auto& val) { return !excluded.contains(val); });
-}
-
-/// Strip a known prefix from a path for compact display.
-/// Searches for any of the `markers` in `path`. If found, returns the suffix after the
-/// marker and the prefix up to and including the marker. If no marker matches, returns
-/// the path unchanged with empty prefix.
-inline std::pair<string_view, string_view> strip_prefixes(string_view path, string_views markers) {
-    for (const auto marker : markers) {
-        if (const auto pos = path.find(marker); pos != string_view::npos) {
-            return {path.substr(pos + marker.size()), path.substr(0, pos + marker.size())};
-        }
-    }
-    return {path, {}};
-}
-
-/// A pair of open/close delimiters for extract_between.
-struct Delimiters {
-    string_view open;
-    string_view close;
-};
-
-/// Extract the substring between two delimiters, trimmed.
-/// Returns nullopt if either delimiter is missing.
-opt_string extract_between(string_view input, Delimiters delimiters);
-
-// --- File I/O ---
-
-string read_file(const fs::path& path);
-
-void write_file(const fs::path& path, string_view content);
-
-// --- Filesystem search ---
-
-/// Member function pointer to directory_entry::is_directory/is_regular_file (error_code overload).
-using EntryCheck = bool (fs::directory_entry::*)(std::error_code&) const;
-
-/// Find the first entry under `root` whose path ends with `suffix`, filtered by `check`.
-optional<fs::path> find_entry(const fs::path& root, string_view suffix, EntryCheck check);
-
-/// Find the first directory under `root` whose path ends with `suffix`.
-inline optional<fs::path> find_dir(const fs::path& root, string_view suffix) {
-    return find_entry(root, suffix, &fs::directory_entry::is_directory);
-}
-
-/// Find the first regular file under `root` whose path ends with `suffix`.
-inline optional<fs::path> find_file(const fs::path& root, string_view suffix) {
-    return find_entry(root, suffix, &fs::directory_entry::is_regular_file);
 }
 
 } // namespace klspw

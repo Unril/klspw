@@ -1,4 +1,4 @@
-#include "common.hpp"
+#include "files.hpp"
 
 #include <fstream>
 
@@ -24,21 +24,6 @@ void write_file(const fs::path& path, string_view content) {
     require(file.good(), "Failed to open file for writing: {}", path);
     file.write(content.data(), static_cast<std::streamsize>(content.size()));
     require(file.good(), "Failed to write file: {}", path);
-}
-
-opt_string extract_between(string_view input, Delimiters delimiters) {
-    require(!delimiters.open.empty(), "extract_between: open delimiter must not be empty");
-    require(!delimiters.close.empty(), "extract_between: close delimiter must not be empty");
-    const auto begin_pos = input.find(delimiters.open);
-    if (begin_pos == string_view::npos) {
-        return nullopt;
-    }
-    const auto content_start = begin_pos + delimiters.open.size();
-    const auto end_pos = input.find(delimiters.close, content_start);
-    if (end_pos == string_view::npos) {
-        return nullopt;
-    }
-    return string{trim(input.substr(content_start, end_pos - content_start))};
 }
 
 optional<fs::path> find_entry(const fs::path& root, string_view suffix, EntryCheck check) {

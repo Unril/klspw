@@ -1,7 +1,6 @@
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "workspace_model.hpp"
+#include "workspace.hpp"
 
 TEST_CASE("DependencyData variant holds correct types") {
     const klspw::DependencyData mod = klspw::ModuleDep{.name = "core"};

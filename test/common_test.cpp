@@ -1,6 +1,9 @@
 #include <doctest/doctest.h>
 
 #include "common.hpp"
+#include "files.hpp"
+#include "ranges.hpp"
+#include "strings.hpp"
 
 using namespace klspw;
 

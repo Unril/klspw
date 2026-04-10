@@ -29,7 +29,6 @@ klspw -c config.yaml inspect
 klspw -c config.yaml validate
 
 # Save raw Gradle output for debugging
-klspw -c config.yaml generate --save-gradle-output ./debug/
 klspw -c config.yaml generate --save-gradle-output output.txt
 
 # Verbose logging
@@ -83,17 +82,22 @@ options:
 
 ```text
 include/
-  common.hpp            # type aliases, utilities, glaze opts
+  common.hpp            # type aliases, namespace imports, glaze opts, require()
+  strings.hpp           # string utilities: trim, join, strip_prefixes, extract_between
+  files.hpp             # file I/O: read_file, write_file, find_dir, find_file, file_stem
+  ranges.hpp            # range adaptors: to_vector, unique_by, not_in
+  describe.hpp          # DescribeContext for human-readable model descriptions
   config.hpp            # config model + YAML loading via glaze
-  gradle.hpp            # GradleRunner: init script lifecycle
-  gradle_output.hpp     # Gradle model types + parser + workspace conversion
-  workspace_model.hpp   # kotlin-lsp workspace.json schema types
+  gradle_runner.hpp     # GradleRunner: init script lifecycle
+  gradle.hpp            # Gradle model types + parser + workspace conversion
+  workspace.hpp         # kotlin-lsp workspace.json schema types
   pipeline.hpp          # Pipeline: orchestrates generate/inspect commands
-  process.hpp           # ProcessRunner: subprocess execution via reproc++
+  process_runner.hpp    # ProcessRunner: subprocess execution via reproc++
   sources.hpp           # source jar/directory discovery for library attachment
 src/
   main.cpp              # CLI entry point (CLI11)
-  common.cpp            # file I/O and string utilities
+  strings.cpp           # extract_between implementation
+  files.cpp             # file I/O and filesystem search implementations
 test/
   test_common.hpp       # shared RAII test fixtures (TempDir, TempConfig)
   smoke.cpp             # basic smoke tests

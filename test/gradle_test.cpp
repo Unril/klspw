@@ -4,8 +4,8 @@
 
 #include <doctest/doctest.h>
 
+#include "gradle_runner.hpp"
 #include "gradle.hpp"
-#include "gradle_output.hpp"
 #include "test_common.hpp"
 
 namespace fs = std::filesystem;
@@ -253,10 +253,10 @@ TEST_CASE("GradleRunner uses default temp dir when not specified") {
 
 // --- SourceSet → workspace model conversion ---
 
-TEST_CASE("library_name_for_jar extracts stem") {
-    CHECK(klspw::library_name_for_jar("/path/to/kotlin-stdlib-2.0.0.jar") == "kotlin-stdlib-2.0.0");
-    CHECK(klspw::library_name_for_jar("/cache/jackson-core-2.15.3.jar") == "jackson-core-2.15.3");
-    CHECK(klspw::library_name_for_jar("simple.jar") == "simple");
+TEST_CASE("file_stem extracts stem") {
+    CHECK(klspw::file_stem("/path/to/kotlin-stdlib-2.0.0.jar") == "kotlin-stdlib-2.0.0");
+    CHECK(klspw::file_stem("/cache/jackson-core-2.15.3.jar") == "jackson-core-2.15.3");
+    CHECK(klspw::file_stem("simple.jar") == "simple");
 }
 
 TEST_CASE("SourceSet::to_source_roots classifies main sources") {

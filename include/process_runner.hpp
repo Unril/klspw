@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "common.hpp"
+#include "strings.hpp"
 
 namespace klspw {
 

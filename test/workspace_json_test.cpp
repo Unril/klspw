@@ -2,7 +2,8 @@
 
 #include <doctest/doctest.h>
 
-#include "workspace_model.hpp"
+#include "files.hpp"
+#include "workspace.hpp"
 
 namespace {
 

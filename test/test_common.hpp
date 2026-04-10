@@ -7,6 +7,7 @@
 #include <string>
 
 #include "common.hpp"
+#include "files.hpp"
 
 namespace fs = std::filesystem;
 

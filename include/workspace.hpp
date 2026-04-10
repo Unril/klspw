@@ -11,6 +11,7 @@
 /// alternatives keep camelCase C++ field names.
 
 #include "common.hpp"
+#include "describe.hpp"
 
 namespace klspw {
 
@@ -22,6 +23,8 @@ enum class DependencyScope : uint8_t { compile, test, runtime, provided };
 struct SourceRootData {
     string path; ///< Absolute path or workspace-relative path.
     string type; ///< "java-source", "java-test", "java-resource", "java-test-resource".
+
+    void describe(DescribeContext& ctx) const { ctx.add(format("      {} [{}]", path, type)); }
 };
 
 /// Root directory containing module source code and resources.
@@ -32,6 +35,11 @@ struct ContentRootData {
     vector<SourceRootData> source_roots; ///< Source and resource folders within this root.
     strings excluded_patterns; ///< Ant-style patterns to exclude (e.g., "**/target/**").
     strings excluded_urls; ///< URL-based exclusions (rarely used in practice).
+
+    void describe(DescribeContext& ctx) const {
+        ctx.add(format("    root: {} ({} source root(s))", path, source_roots.size()));
+        ctx.describe_each(source_roots);
+    }
 };
 
 /// Variant alternatives keep camelCase field names because glaze's tagged variant
@@ -125,19 +133,14 @@ struct ModuleData {
     vector<ContentRootData> content_roots; ///< Root directories containing source code.
     vector<FacetData> facets; ///< Framework facets (Spring, JPA). Usually empty.
 
-    void describe(strings& out, bool verbose) const {
+    void describe(DescribeContext& ctx) const {
         const auto lib_deps =
             r::count_if(dependencies, [](const auto& d) { return std::holds_alternative<LibraryDep>(d); });
-        out.push_back(format("  {} ({} deps, {} content root(s))", name, lib_deps, content_roots.size()));
-        if (!verbose) {
+        ctx.add(format("  {} ({} deps, {} content root(s))", name, lib_deps, content_roots.size()));
+        if (!ctx.verbose()) {
             return;
         }
-        for (const auto& cr : content_roots) {
-            out.push_back(format("    root: {} ({} source root(s))", cr.path, cr.source_roots.size()));
-            for (const auto& sr : cr.source_roots) {
-                out.push_back(format("      {} [{}]", sr.path, sr.type));
-            }
-        }
+        ctx.describe_each(content_roots);
     }
 };
 
@@ -147,6 +150,8 @@ struct LibraryRootData {
     string type = "CLASSES"; ///< "CLASSES" (default), "SOURCES", or "JAVADOC".
     string inclusion_options =
         "root_itself"; ///< "root_itself", "archives_under_root", "archives_under_root_recursively".
+
+    void describe(DescribeContext& ctx) const { ctx.add(format("    {}  [{}]", ctx.shorten_path(path), type)); }
 };
 
 /// An external library (jar dependency).
@@ -162,21 +167,12 @@ struct LibraryData {
     strings excluded_roots; ///< Paths to exclude from classpath.
     optional<XmlElement> properties; ///< Maven coordinates or other metadata as XML.
 
-    /// Append description lines. `path_markers` controls path shortening for cache jars.
-    void describe(strings& out, bool verbose, string_views path_markers, set<string>& stripped_prefixes) const {
-        out.push_back(format("  {} ({} root(s))", name, roots.size()));
-        if (!verbose) {
+    void describe(DescribeContext& ctx) const {
+        ctx.add(format("  {} ({} root(s))", name, roots.size()));
+        if (!ctx.verbose()) {
             return;
         }
-        for (const auto& root : roots) {
-            auto [display, stripped] = strip_prefixes(root.path, path_markers);
-            if (!stripped.empty()) {
-                stripped_prefixes.emplace(stripped);
-                out.push_back(format("    .../{}  [{}]", display, root.type));
-            } else {
-                out.push_back(format("    {}  [{}]", display, root.type));
-            }
-        }
+        ctx.describe_each(roots);
     }
 };
 
@@ -235,8 +231,8 @@ struct KotlinSettingsData {
     int version = 5; ///< Settings schema version.
     bool flush_needed = false; ///< Whether settings refresh is needed.
 
-    void describe(strings& out, [[maybe_unused]] bool verbose) const {
-        out.push_back(format("  module={}, {} source root(s), {} pure-kotlin folder(s)",
+    void describe(DescribeContext& ctx) const {
+        ctx.add(format("  module={}, {} source root(s), {} pure-kotlin folder(s)",
             module,
             source_roots.size(),
             pure_kotlin_source_folders.size()));
@@ -286,30 +282,20 @@ struct WorkspaceData {
     }
 
     /// Build a human-readable description of the workspace.
-    /// `path_markers` controls path shortening for cache jar paths.
     strings describe(bool verbose = true, string_views path_markers = {}) const {
-        strings out;
+        DescribeContext ctx{verbose, path_markers};
 
-        out.push_back(format("Modules ({}):", modules.size()));
-        for (const auto& mod : modules) {
-            mod.describe(out, verbose);
-        }
+        ctx.add(format("Modules ({}):", modules.size()));
+        ctx.describe_each(modules);
 
-        out.push_back(format("Libraries ({}):", libraries.size()));
-        set<string> cache_prefixes;
-        for (const auto& lib : libraries) {
-            lib.describe(out, verbose, path_markers, cache_prefixes);
-        }
-        for (const auto& prefix : cache_prefixes) {
-            out.push_back(format("  (cache: {})", prefix));
-        }
+        ctx.add(format("Libraries ({}):", libraries.size()));
+        ctx.describe_each(libraries);
+        ctx.flush_stripped_prefixes();
 
-        out.push_back(format("Kotlin settings ({}):", kotlin_settings.size()));
-        for (const auto& ks : kotlin_settings) {
-            ks.describe(out, verbose);
-        }
+        ctx.add(format("Kotlin settings ({}):", kotlin_settings.size()));
+        ctx.describe_each(kotlin_settings);
 
-        return out;
+        return ctx.take_lines();
     }
 };
 

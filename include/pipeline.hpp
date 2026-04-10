@@ -8,9 +8,11 @@
 #include <spdlog/spdlog.h>
 
 #include "config.hpp"
+#include "files.hpp"
+#include "gradle_runner.hpp"
 #include "gradle.hpp"
-#include "gradle_output.hpp"
-#include "workspace_model.hpp"
+#include "strings.hpp"
+#include "workspace.hpp"
 
 namespace klspw {
 

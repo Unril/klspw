@@ -21,7 +21,7 @@ configure_file(
     @ONLY
 )
 
-add_library(klspw_lib STATIC src/common.cpp)
+add_library(klspw_lib STATIC src/strings.cpp src/files.cpp)
 target_include_directories(
     klspw_lib
     PUBLIC
@@ -81,6 +81,10 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/smoke.cpp")
             klspw_lib
             doctest::doctest
             $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
+    )
+
+    target_compile_definitions(klspw_tests PRIVATE
+        DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
     )
 
     add_test(NAME klspw_tests COMMAND klspw_tests)
@@ -246,6 +250,10 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/config_save_test.c
         $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
     )
 
+    target_compile_definitions(config_save_test PRIVATE
+        DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+    )
+
     add_test(NAME config_save_test COMMAND config_save_test)
     set_tests_properties(config_save_test PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -262,6 +270,10 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/sources_test.cpp")
         klspw_lib
         doctest::doctest
         $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
+    )
+
+    target_compile_definitions(sources_test PRIVATE
+        DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
     )
 
     add_test(NAME sources_test COMMAND sources_test)
@@ -285,6 +297,10 @@ if(BUILD_TESTING AND ENABLE_INTEGRATION_TESTS
         klspw_lib
         doctest::doctest
         $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
+    )
+
+    target_compile_definitions(integration_test PRIVATE
+        DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
     )
 
     add_test(NAME integration_test COMMAND integration_test)

@@ -27,6 +27,9 @@
 #include <spdlog/spdlog.h>
 
 #include "common.hpp"
+#include "describe.hpp"
+#include "files.hpp"
+#include "strings.hpp"
 
 namespace klspw {
 
@@ -159,26 +162,26 @@ class Config {
     const fs::path& config_dir() const { return config_dir_; }
 
     strings describe(bool verbose = true) const {
-        strings out;
-        out.push_back(format("Config: {}", config_file_.string()));
-        out.push_back(format("  {} root(s), jvm_target={}, workspace_file={}",
+        DescribeContext ctx{verbose};
+        ctx.add(format("Config: {}", config_file_.string()));
+        ctx.add(format("  {} root(s), jvm_target={}, workspace_file={}",
             roots().size(),
             jvm_target(),
             data_.workspace_file.empty() ? "(not set)" : data_.workspace_file));
-        if (!verbose) {
-            return out;
+        if (!ctx.verbose()) {
+            return ctx.take_lines();
         }
         if (data_.build) {
-            out.push_back(format("  build: {} {}", join(data_.build->command), join(data_.build->gradle_args)));
+            ctx.add(format("  build: {} {}", join(data_.build->command), join(data_.build->gradle_args)));
         }
         for (const auto& root : data_.roots) {
             auto line = format("  root: {}", root_path(root).string());
             if (root.build) {
                 line += format(" (build: {})", join(root.build->command));
             }
-            out.push_back(std::move(line));
+            ctx.add(std::move(line));
         }
-        return out;
+        return ctx.take_lines();
     }
 
     // --- Forwarded accessors ---

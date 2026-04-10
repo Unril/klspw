@@ -22,7 +22,7 @@ PackConstructorInitializers: CurrentLine
 ConstructorInitializerIndentWidth: 4
 
 # Avoid dense one-liners.
-AllowShortFunctionsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortBlocksOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
