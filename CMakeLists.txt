@@ -21,6 +21,12 @@ configure_file(
     @ONLY
 )
 
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp"
+    @ONLY
+)
+
 add_library(klspw_lib STATIC src/strings.cpp src/files.cpp)
 target_include_directories(
     klspw_lib

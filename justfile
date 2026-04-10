@@ -19,6 +19,13 @@ rebuild: clean configure build
 run *args: build
     ./build/{{ preset }}/klspw {{ args }}
 
+release:
+    just preset=release configure build test
+
+install prefix="/usr/local":
+    just release
+    cmake --install build/release --prefix {{ prefix }}
+
 # Format all C++ source and header files with clang-format
 format:
     find include src test -name '*.hpp' -o -name '*.cpp' | xargs clang-format -i

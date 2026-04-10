@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "pipeline.hpp"
+#include "version.hpp"
 
 namespace {
 
@@ -39,6 +40,7 @@ void set_log_level(std::string_view level) {
 
 int main(int argc, char* argv[]) try {
     CLI::App app{{"klspw - Kotlin LSP workspace generator"}};
+    app.set_version_flag("-V,--version", std::string{klspw::version});
     app.require_subcommand(1);
 
     std::string config_path;
