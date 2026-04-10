@@ -79,6 +79,8 @@ struct RootEntry {
     string path; ///< Relative or absolute path to the Gradle root project directory.
     optional<BuildConfig> build; ///< Per-root build override. Absent = inherit global.
 
+    bool has_build() const { return build.has_value(); }
+
     void validate(ValidateContext& ctx) const {
         ctx.check(!path.empty(), "Config missing required field: path");
         ctx.validate(build);
@@ -86,7 +88,7 @@ struct RootEntry {
 
     void describe(DescribeContext& ctx) const {
         auto line = format("  root: {}", path);
-        if (build) {
+        if (has_build()) {
             line += format(" (build: {})", join(build->command));
         }
         ctx.add(std::move(line));
@@ -106,7 +108,9 @@ struct ConfigData {
 
     void validate(ValidateContext& ctx) const {
         ctx.check(version != 0, "Config missing required field: version");
-        ctx.check(version == 1 || version == 0, format("Unsupported config version: {}", version));
+        if (version != 0) {
+            ctx.check(version == 1, format("Unsupported config version: {}", version));
+        }
         ctx.check(!roots.empty(), "Config missing required field: roots");
         ctx.validate(build);
         ctx.validate(roots);
@@ -119,16 +123,16 @@ struct ConfigData {
     /// Uses per-root build if present, otherwise falls back to the global build.
     /// Throws if neither is configured.
     const BuildConfig& build_for(const RootEntry& root) const {
-        if (root.build) {
+        if (root.has_build()) {
             return *root.build;
         }
-        require(build.has_value(), "no build command configured for root: {}", root.path);
+        require(has_build(), "no build command configured for root: {}", root.path);
         return *build;
     }
 
-    bool has_any_build_command() const {
-        return build.has_value() || r::any_of(roots, [](const auto& entry) { return entry.build.has_value(); });
-    }
+    bool has_build() const { return build.has_value(); }
+
+    bool has_any_build_command() const { return has_build() || r::any_of(roots, &RootEntry::has_build); }
 
     void describe(DescribeContext& ctx) const {
         ctx.add(format("  {} root(s), jvm_target={}, workspace_file={}",
@@ -178,49 +182,50 @@ inline fs::path resolve_config_path(const fs::path& path) {
 
 /// Generates a starter ConfigData for the `init` subcommand.
 ///
-/// Constructed from a Gradle root path and an optional config file path.
-/// config_path can be empty (stdout), a directory, or a file path.
-/// The config directory is derived from config_path for relative root resolution.
+/// Each root arg is "path [build_command...]" -- first word is the directory,
+/// remaining words become the per-root build command.
+/// Roots without a build command inherit the global build (default: ./gradlew).
 class StarterConfig {
   public:
     static constexpr auto default_workspace_file = "./workspace.json"s;
     static constexpr auto default_gradle_command = "./gradlew"s;
 
-    explicit StarterConfig(const fs::path& root_path) : root_path_{fs::weakly_canonical(root_path)} {
-        require(fs::is_directory(root_path), "root_path must be an existing directory: {}", root_path);
+    /// Construct from CLI root arguments. Each arg is "path [build_command...]".
+    /// First word is the root path, remaining words are the per-root build command.
+    explicit StarterConfig(const strings& root_args) {
+        require(!root_args.empty(), "at least one root argument is required");
+        for (const auto& arg : root_args) {
+            add_root(arg);
+        }
+        ensure_default_build();
     }
 
-    const string& jvm_target() const { return jvm_target_; }
-
     StarterConfig& set_jvm_target(string value) {
-        jvm_target_ = std::move(value);
+        data_.jvm_target = std::move(value);
+        return *this;
+    }
+
+    /// Override the global build command. Words are split on spaces.
+    StarterConfig& set_build(string_view command) {
+        data_.build = BuildConfig{.command = split_words(trim(command))};
         return *this;
     }
 
     const fs::path& config_path() const { return config_path_; }
 
+    /// Set config output path. Root paths are rebased relative to the new config directory.
     StarterConfig& set_config_path(const fs::path& path) {
         config_path_ = path;
         config_dir_ = fs::weakly_canonical(resolve_config_path(path)).parent_path();
+        rebase_roots();
         return *this;
     }
 
-    /// Build a ConfigData with paths relative to config_dir.
-    ConfigData to_config_data() const {
-        const auto rel = "./" + root_path_.lexically_relative(config_dir_).string();
-        return {
-            .version = 1,
-            .workspace_file = default_workspace_file,
-            .jvm_target = jvm_target_,
-            .build = BuildConfig{.command = {default_gradle_command}},
-            .roots = {{.path = rel}},
-        };
-    }
+    const ConfigData& to_data() const { return data_; }
 
-    /// Serialize directly to YAML.
-    string to_yaml() const { return to_config_data().to_yaml(); }
+    string to_yaml() const { return data_.to_yaml(); }
 
-    /// Save to a file. If config_path is a directory, appends "klspw.yaml".
+    /// Save to a file. config_path can be a directory (appends klspw.yaml) or a file path.
     void save_yaml_file() const {
         require(!config_path_.empty(), "no config path specified (use to_yaml() for stdout)");
         const auto resolved = resolve_config_path(config_path_);
@@ -229,10 +234,51 @@ class StarterConfig {
     }
 
   private:
-    fs::path root_path_;
+    /// Parse a root arg and append to data_.roots.
+    /// First word = directory path (must exist), remaining words = per-root build command.
+    void add_root(string_view arg) {
+        auto words = split_words(arg);
+        require(!words.empty(), "root argument must not be empty");
+
+        const auto path = fs::path{words[0]};
+        require(fs::is_directory(path), "root path must be an existing directory: {}", path);
+
+        RootEntry entry{.path = relative_path(fs::weakly_canonical(path))};
+
+        if (words.size() > 1) {
+            entry.build = BuildConfig{.command = {words.begin() + 1, words.end()}};
+        }
+
+        data_.roots.push_back(std::move(entry));
+    }
+
+    string relative_path(const fs::path& absolute) const {
+        return "./" + absolute.lexically_relative(config_dir_).string();
+    }
+
+    /// Add default ./gradlew global build when not all roots have their own.
+    void ensure_default_build() {
+        if (!data_.has_build()) {
+            const auto all_have_build = r::all_of(data_.roots, &RootEntry::has_build);
+            if (!all_have_build) {
+                data_.build = BuildConfig{.command = {default_gradle_command}};
+            }
+        }
+    }
+
+    /// Recompute root paths relative to the current config_dir.
+    void rebase_roots() {
+        for (auto& root : data_.roots) {
+            const auto abs = (old_config_dir_ / root.path).lexically_normal();
+            root.path = relative_path(abs);
+        }
+        old_config_dir_ = config_dir_;
+    }
+
+    ConfigData data_{.version = 1, .workspace_file = default_workspace_file};
     fs::path config_path_;
     fs::path config_dir_ = fs::weakly_canonical(resolve_config_path({})).parent_path();
-    string jvm_target_ = "21";
+    fs::path old_config_dir_ = config_dir_;
 };
 
 /// Loaded and validated config. Resolves relative paths against config_dir on demand.
@@ -242,7 +288,6 @@ class Config {
     static Config load_yaml_file(const fs::path& config_path) {
         const auto resolved = resolve_config_path(config_path);
         require(fs::exists(resolved), "Config file not found: {}", resolved);
-        spdlog::info("Loading config: {}", resolved.string());
         auto data = ConfigData::from_yaml(read_file(resolved));
         auto cfg = Config{std::move(data), resolved};
         DescribeContext ctx;
@@ -267,10 +312,6 @@ class Config {
 
     /// Root path resolved against config dir.
     fs::path root_path(const RootEntry& root) const { return resolve(root.path); }
-
-    string to_yaml() const { return data_.to_yaml(); }
-
-    void save_yaml_file(const fs::path& config_path) const { write_file(config_path, data_.to_yaml()); }
 
     void describe(DescribeContext& ctx) const {
         ctx.add(format("Config: {}", config_file_.string()));

@@ -68,9 +68,10 @@ TEST_CASE("to_yaml with per-root build overrides round-trips") {
 
 // --- StarterConfig ---
 
-TEST_CASE("StarterConfig produces valid config data") {
+TEST_CASE("StarterConfig single root with default build") {
     const TempDir root_dir;
-    const auto data = klspw::StarterConfig{root_dir.path}.set_config_path(root_dir.path.parent_path()).to_config_data();
+    const auto data =
+        klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(root_dir.path.parent_path()).to_data();
 
     CHECK(data.version == 1);
     CHECK(data.workspace_file == "./workspace.json");
@@ -78,12 +79,13 @@ TEST_CASE("StarterConfig produces valid config data") {
     CHECK(data.build->command == klspw::strings{"./gradlew"});
     REQUIRE(data.roots.size() == 1);
     CHECK(data.roots[0].path.starts_with("./"));
+    CHECK_FALSE(data.roots[0].build.has_value());
 }
 
 TEST_CASE("StarterConfig root path is relative to config_dir") {
     const TempDir root_dir;
-    const auto parent = std::filesystem::weakly_canonical(root_dir.path.parent_path());
-    const auto data = klspw::StarterConfig{root_dir.path}.set_config_path(parent).to_config_data();
+    const auto parent = fs::weakly_canonical(root_dir.path.parent_path());
+    const auto data = klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(parent).to_data();
 
     const auto expected = "./" + root_dir.path.filename().string();
     CHECK(data.roots[0].path == expected);
@@ -91,43 +93,109 @@ TEST_CASE("StarterConfig root path is relative to config_dir") {
 
 TEST_CASE("StarterConfig respects custom jvm_target") {
     const TempDir root_dir;
-    const auto data = klspw::StarterConfig{root_dir.path}
+    const auto data = klspw::StarterConfig{{root_dir.path.string()}}
                           .set_config_path(root_dir.path.parent_path())
                           .set_jvm_target("17")
-                          .to_config_data();
+                          .to_data();
     CHECK(data.jvm_target == "17");
 }
 
 TEST_CASE("StarterConfig output passes ConfigData::validate") {
     const TempDir root_dir;
-    const auto data = klspw::StarterConfig{root_dir.path}.set_config_path(root_dir.path.parent_path()).to_config_data();
+    const auto data =
+        klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(root_dir.path.parent_path()).to_data();
     CHECK_NOTHROW(klspw::ValidateContext::require_valid(data));
 }
 
 TEST_CASE("StarterConfig throws on nonexistent root") {
-    CHECK_THROWS_WITH_AS(klspw::StarterConfig{"/tmp/klspw_nonexistent_dir_xyz"},
+    CHECK_THROWS_WITH_AS(klspw::StarterConfig{klspw::strings{"/tmp/klspw_nonexistent_dir_xyz"}},
         doctest::Contains("must be an existing directory"),
         std::runtime_error);
 }
 
+TEST_CASE("StarterConfig throws on empty root args") {
+    CHECK_THROWS_WITH_AS(klspw::StarterConfig{klspw::strings{}},
+        doctest::Contains("at least one root"),
+        std::runtime_error);
+}
+
 TEST_CASE("StarterConfig without config_path resolves root relative to cwd") {
-    const auto data = klspw::StarterConfig{fs::temp_directory_path()}.to_config_data();
+    const auto data = klspw::StarterConfig{{fs::temp_directory_path().string()}}.to_data();
 
     CHECK(data.roots[0].path.starts_with("./"));
     CHECK_NOTHROW(klspw::ValidateContext::require_valid(data));
 }
 
 TEST_CASE("StarterConfig save_yaml_file throws without config_path") {
-    CHECK_THROWS_WITH_AS(klspw::StarterConfig{fs::temp_directory_path()}.save_yaml_file(),
+    CHECK_THROWS_WITH_AS(klspw::StarterConfig{{fs::temp_directory_path().string()}}.save_yaml_file(),
         doctest::Contains("no config path"),
         std::runtime_error);
 }
 
 TEST_CASE("StarterConfig save_yaml_file to directory appends default filename") {
     const TempDir root_dir;
-    klspw::StarterConfig{root_dir.path}.set_config_path(root_dir.path).save_yaml_file();
+    klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(root_dir.path).save_yaml_file();
 
     CHECK(fs::is_regular_file(root_dir.path / klspw::default_config_filename));
+}
+
+TEST_CASE("StarterConfig parses per-root build command from arg string") {
+    const TempDir root_dir;
+    const auto arg = root_dir.path.string() + " my_build --silent";
+    const auto data = klspw::StarterConfig{{arg}}.set_config_path(root_dir.path.parent_path()).to_data();
+
+    REQUIRE(data.roots.size() == 1);
+    REQUIRE(data.roots[0].build.has_value());
+    CHECK(data.roots[0].build->command == klspw::strings{"my_build", "--silent"});
+    CHECK_FALSE(data.build.has_value()); // no global build when all roots have one
+}
+
+TEST_CASE("StarterConfig multiple roots") {
+    const TempDir dir_a;
+    const TempDir dir_b;
+    const auto data = klspw::StarterConfig{{dir_a.path.string(), dir_b.path.string()}}
+                          .set_config_path(dir_a.path.parent_path())
+                          .to_data();
+
+    REQUIRE(data.roots.size() == 2);
+    CHECK(data.roots[0].path.starts_with("./"));
+    CHECK(data.roots[1].path.starts_with("./"));
+    CHECK(data.build->command == klspw::strings{"./gradlew"}); // default global build
+}
+
+TEST_CASE("StarterConfig global build via set_build") {
+    const TempDir root_dir;
+    const auto data = klspw::StarterConfig{{root_dir.path.string()}}
+                          .set_config_path(root_dir.path.parent_path())
+                          .set_build("my-build")
+                          .to_data();
+
+    CHECK(data.build->command == klspw::strings{"my-build"});
+    CHECK_FALSE(data.roots[0].build.has_value());
+}
+
+TEST_CASE("StarterConfig global build with flags via set_build") {
+    const TempDir root_dir;
+    const auto data = klspw::StarterConfig{{root_dir.path.string()}}
+                          .set_config_path(root_dir.path.parent_path())
+                          .set_build("my-build --quiet")
+                          .to_data();
+
+    CHECK(data.build->command == klspw::strings{"my-build", "--quiet"});
+}
+
+TEST_CASE("StarterConfig mixed: some roots with build, global for the rest") {
+    const TempDir dir_a;
+    const TempDir dir_b;
+    const auto arg_a = dir_a.path.string() + " custom_build";
+    const auto data =
+        klspw::StarterConfig{{arg_a, dir_b.path.string()}}.set_config_path(dir_a.path.parent_path()).to_data();
+
+    REQUIRE(data.roots.size() == 2);
+    REQUIRE(data.roots[0].build.has_value());
+    CHECK(data.roots[0].build->command == klspw::strings{"custom_build"});
+    CHECK_FALSE(data.roots[1].build.has_value());
+    CHECK(data.build->command == klspw::strings{"./gradlew"}); // default for dir_b
 }
 
 // --- End-to-end: StarterConfig -> to_yaml -> Config::load_yaml_file ---
@@ -135,7 +203,7 @@ TEST_CASE("StarterConfig save_yaml_file to directory appends default filename") 
 TEST_CASE("StarterConfig to_yaml round-trips through Config::load_yaml_file") {
     const TempDir root_dir;
     const auto config_path = root_dir.path / "config.yaml";
-    klspw::StarterConfig{root_dir.path}.set_config_path(config_path).save_yaml_file();
+    klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(config_path).save_yaml_file();
 
     const auto cfg = klspw::Config::load_yaml_file(config_path);
     const auto& data = cfg.data();

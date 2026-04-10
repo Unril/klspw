@@ -312,3 +312,27 @@ TEST_CASE("strip_prefixes with marker at start") {
     CHECK(suffix == "lib.jar");
     CHECK(prefix == "/caches/");
 }
+
+// --- split_words ---
+
+TEST_CASE("split_words splits on spaces") {
+    CHECK(klspw::split_words("hello world") == klspw::strings{"hello", "world"});
+}
+
+TEST_CASE("split_words single word") { CHECK(klspw::split_words("gradlew") == klspw::strings{"gradlew"}); }
+
+TEST_CASE("split_words trims leading and trailing spaces") {
+    CHECK(klspw::split_words("  hello  world  ") == klspw::strings{"hello", "world"});
+}
+
+TEST_CASE("split_words skips multiple consecutive spaces") {
+    CHECK(klspw::split_words("a   b   c") == klspw::strings{"a", "b", "c"});
+}
+
+TEST_CASE("split_words empty string returns empty") { CHECK(klspw::split_words("").empty()); }
+
+TEST_CASE("split_words whitespace-only returns empty") { CHECK(klspw::split_words("   ").empty()); }
+
+TEST_CASE("split_words preserves flags") {
+    CHECK(klspw::split_words("my_build --quiet --no-daemon") == klspw::strings{"my_build", "--quiet", "--no-daemon"});
+}

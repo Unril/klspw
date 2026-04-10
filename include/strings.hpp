@@ -25,6 +25,13 @@ inline string join(R&& parts, string_view sep = " ") {
 
 inline string join(std::initializer_list<string_view> parts, string_view sep = " ") { return join<>(parts, sep); }
 
+/// Split a string into words on spaces, skipping empty segments.
+inline strings split_words(string_view sv) {
+    const auto non_empty = [](auto&& word) { return !r::empty(word); };
+    const auto to_string = [](auto&& word) { return string(word.begin(), word.end()); };
+    return trim(sv) | v::split(' ') | v::filter(non_empty) | v::transform(to_string) | r::to<strings>();
+}
+
 /// Strip a known prefix from a path for compact display.
 /// Searches for any of the `markers` in `path`. If found, returns the suffix after the
 /// marker and the prefix up to and including the marker. If no marker matches, returns

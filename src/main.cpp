@@ -39,24 +39,31 @@ void set_log_level(std::string_view level) {
 } // namespace
 
 int main(int argc, char* argv[]) try {
-    CLI::App app{{"klspw - Kotlin LSP workspace generator"}};
+    CLI::App app{{"klspw - Generate workspace.json for kotlin-lsp from Gradle builds"}};
     app.set_version_flag("-V,--version", std::string{klspw::version});
+    app.footer(R"(Quick start:
+  klspw init ./my-project -c klspw.yaml          # one root, default ./gradlew
+  klspw init "./proj gradlew" -c klspw.yaml      # one root, custom build
+  klspw init ./proj_1 ./proj_2 -b my-build       # two roots, global build
+  klspw generate                                 # run Gradle, write workspace.json)");
     app.require_subcommand(1);
 
     std::string config_path;
-    std::string log_level = "warn";
+    std::string log_level = "info";
 
     app.add_option("-c,--config", config_path, "Path to config YAML file");
     app.add_option("-l,--log-level", log_level, "Log level: trace, debug, info, warn, error, off")
-        ->default_val("warn")
+        ->default_val("info")
         ->check(CLI::IsMember(log_level_names()));
 
     // --- init subcommand ---
     auto* init = app.add_subcommand("init", "Generate a starter config YAML for a Gradle root");
-    std::string init_root;
+    klspw::strings init_roots;
     std::string init_jvm_target = "21";
-    init->add_option("root", init_root, "Path to Gradle root (directory containing build.gradle.kts)")->required();
+    std::string init_build;
+    init->add_option("roots", init_roots, "Root args: \"path [build_command...]\" ...")->required();
     init->add_option("--jvm-target", init_jvm_target, "JVM target version")->default_val("21");
+    init->add_option("-b,--build", init_build, "Global build command for all roots");
 
     // --- subcommands requiring --config ---
     auto* gen = app.add_subcommand("generate", "Generate workspace.json");
@@ -73,7 +80,11 @@ int main(int argc, char* argv[]) try {
     set_log_level(log_level);
 
     if (init->parsed()) {
-        auto starter = klspw::StarterConfig{init_root}.set_jvm_target(init_jvm_target).set_config_path(config_path);
+        auto starter = klspw::StarterConfig{init_roots}.set_jvm_target(init_jvm_target).set_config_path(config_path);
+
+        if (!init_build.empty()) {
+            starter.set_build(init_build);
+        }
 
         if (!starter.config_path().empty()) {
             starter.save_yaml_file();
