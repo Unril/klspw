@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.0.21"
+    kotlin("jvm") version "2.2.0"
 }
 
 repositories {
@@ -7,7 +7,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.google.guava:guava:33.4.0-jre")
+    implementation("com.squareup.okhttp3:okhttp:5.1.0")
     testImplementation(kotlin("test"))
 }
 

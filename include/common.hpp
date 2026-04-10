@@ -8,7 +8,6 @@
 #include <filesystem> // IWYU pragma: keep
 #include <format>
 #include <functional>
-#include <map>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -21,6 +20,7 @@
 #include <variant>
 #include <vector>
 
+#include <glaze/containers/ordered_map.hpp>
 #include <glaze/glaze.hpp>
 
 namespace klspw {
@@ -28,7 +28,6 @@ namespace klspw {
 // --- Type imports ---
 
 using std::format;
-using std::map;
 using std::nullopt;
 using std::optional;
 using std::runtime_error;
@@ -36,8 +35,6 @@ using std::set;
 using std::size_t;
 using std::string;
 using std::string_view;
-using std::unordered_map;
-using std::unordered_set;
 using std::variant;
 using std::vector;
 
@@ -48,6 +45,10 @@ namespace fs = std::filesystem;
 using strings = vector<string>;
 using opt_string = optional<string>;
 using string_set = std::unordered_set<string>;
+
+/// Ordered map with O(1) lookup and deterministic iteration order.
+/// Used for all string-keyed maps in model types (serialized to JSON objects).
+template <typename V> using string_map = glz::ordered_map<string, V>;
 
 /// Pipe adaptor: range | to_vector() materializes into a vector.
 template <typename T = void> constexpr auto to_vector() {
@@ -178,6 +179,21 @@ inline auto not_in(const string_set& excluded) {
     return v::filter([&excluded](const auto& val) { return !excluded.contains(val); });
 }
 
+/// Strip a known prefix from a path for compact display.
+/// Searches for any of the `markers` in `path`. If found, returns the suffix starting at the
+/// marker and the prefix before it. If no marker matches, returns the path unchanged with empty prefix.
+template <r::input_range Markers>
+    requires std::constructible_from<string_view, r::range_reference_t<Markers>>
+std::pair<string_view, string_view> strip_prefixes(string_view path, const Markers& markers) {
+    for (const auto& m : markers) {
+        const string_view marker{m};
+        if (const auto pos = path.find(marker); pos != string_view::npos) {
+            return {path.substr(pos + marker.size()), path.substr(0, pos + marker.size())};
+        }
+    }
+    return {path, {}};
+}
+
 /// A pair of open/close delimiters for extract_between.
 struct Delimiters {
     string_view open;
@@ -193,5 +209,23 @@ opt_string extract_between(string_view input, Delimiters delimiters);
 string read_file(const fs::path& path);
 
 void write_file(const fs::path& path, string_view content);
+
+// --- Filesystem search ---
+
+/// Member function pointer to directory_entry::is_directory/is_regular_file (error_code overload).
+using EntryCheck = bool (fs::directory_entry::*)(std::error_code&) const;
+
+/// Find the first entry under `root` whose path ends with `suffix`, filtered by `check`.
+optional<fs::path> find_entry(const fs::path& root, string_view suffix, EntryCheck check);
+
+/// Find the first directory under `root` whose path ends with `suffix`.
+inline optional<fs::path> find_dir(const fs::path& root, string_view suffix) {
+    return find_entry(root, suffix, &fs::directory_entry::is_directory);
+}
+
+/// Find the first regular file under `root` whose path ends with `suffix`.
+inline optional<fs::path> find_file(const fs::path& root, string_view suffix) {
+    return find_entry(root, suffix, &fs::directory_entry::is_regular_file);
+}
 
 } // namespace klspw

@@ -16,6 +16,8 @@ vcpkg_installed/
 *~
 work/
 AGENTS.md
+tmp_*.json
+tmp_*.txt
 
 # macOS
 .DS_Store

@@ -41,4 +41,15 @@ opt_string extract_between(string_view input, Delimiters delimiters) {
     return string{trim(input.substr(content_start, end_pos - content_start))};
 }
 
+optional<fs::path> find_entry(const fs::path& root, string_view suffix, EntryCheck check) {
+    std::error_code ec;
+    for (const auto& entry :
+        fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
+        if (std::mem_fn(check)(entry, ec) && entry.path().native().ends_with(suffix)) {
+            return entry.path();
+        }
+    }
+    return nullopt;
+}
+
 } // namespace klspw

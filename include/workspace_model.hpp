@@ -102,7 +102,7 @@ namespace klspw {
 /// Rarely populated in practice; preserved for lossless round-trip.
 struct XmlElement {
     string tag; ///< XML element name (e.g., "configuration").
-    map<string, string> attributes; ///< Element attributes.
+    string_map<string> attributes; ///< Element attributes.
     vector<XmlElement> children; ///< Nested child elements.
     opt_string text; ///< Element text content, if any.
 };
@@ -183,7 +183,7 @@ struct KotlinSettingsData {
     bool use_project_settings = false; ///< Use project-level Kotlin settings.
     strings implemented_module_names; ///< Platform implementations for multiplatform.
     strings depends_on_module_names; ///< Source set dependencies for multiplatform.
-    set<string> additional_visible_module_names; ///< Cross-source-set visibility (sorted for deterministic output).
+    strings additional_visible_module_names; ///< Cross-source-set visibility (sorted for deterministic output).
     opt_string production_output_path; ///< Compiled output directory.
     opt_string test_output_path; ///< Test output directory.
     strings source_set_names; ///< Gradle source set names.
@@ -213,7 +213,7 @@ struct JavaSettingsData {
     opt_string compiler_output; ///< Compiled .class output directory.
     opt_string compiler_output_for_tests; ///< Test .class output directory.
     opt_string language_level_id; ///< Java version: "JDK_17", "JDK_21", etc.
-    map<string, string> manifest_attributes; ///< MANIFEST.MF attributes.
+    string_map<string> manifest_attributes; ///< MANIFEST.MF attributes.
 };
 
 /// Root container for the entire workspace.json.

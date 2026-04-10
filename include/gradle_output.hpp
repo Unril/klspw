@@ -52,7 +52,7 @@ struct SourceSet {
     opt_string resources_dir; ///< Processed resources output directory.
     strings compile_classpath; ///< Jars available at compile time.
     strings runtime_classpath; ///< Jars available at runtime.
-    map<string, string> source_classpath; ///< Classes jar path -> source jar path (resolved by Gradle).
+    string_map<string> source_classpath; ///< Classes jar -> source jar (resolved by Gradle).
     string compile_classpath_configuration_name; ///< Gradle configuration name for compile classpath.
     string runtime_classpath_configuration_name; ///< Gradle configuration name for runtime classpath.
 
@@ -77,17 +77,19 @@ struct SourceSet {
         return {.path = path, .type = is_test() ? "java-test-resource" : "java-resource"};
     }
 
-    LibraryData library_from_jar(string_view jar, bool attach_sources) const {
+    LibraryData library_from_jar_with_sources(string_view jar) const {
         vector<LibraryRootData> roots{{.path = string{jar}}};
-        if (attach_sources) {
-            // Prefer Gradle-resolved source jar, fall back to filesystem discovery.
-            if (auto it = source_classpath.find(string{jar}); it != source_classpath.end()) {
-                roots.push_back({.path = it->second, .type = "SOURCES"});
-            } else if (auto src = find_sources(jar)) {
-                roots.push_back({.path = std::move(*src), .type = "SOURCES"});
-            }
+        // Prefer Gradle-resolved source jar, fall back to filesystem discovery.
+        if (auto it = source_classpath.find(string{jar}); it != source_classpath.end()) {
+            roots.push_back({.path = it->second, .type = "SOURCES"});
+        } else if (auto src = SourceResolver{jar}.find()) {
+            roots.push_back({.path = std::move(*src), .type = "SOURCES"});
         }
         return {.name = library_name_for_jar(jar), .type = "java-imported", .roots = std::move(roots)};
+    }
+
+    static LibraryData library_from_jar(string_view jar) {
+        return {.name = library_name_for_jar(jar), .type = "java-imported", .roots = {{.path = string{jar}}}};
     }
 
     LibraryDep library_dep_from_jar(string_view jar) const {
@@ -105,9 +107,13 @@ struct SourceSet {
         return roots;
     }
 
-    vector<LibraryData> collect_libraries(bool attach_sources) const {
-        auto to_lib = [&](const auto& jar) { return library_from_jar(jar, attach_sources); };
+    vector<LibraryData> collect_libraries_with_sources() const {
+        auto to_lib = [&](const auto& jar) { return library_from_jar_with_sources(jar); };
         return compile_classpath | v::transform(to_lib) | to_vector();
+    }
+
+    vector<LibraryData> collect_libraries() const {
+        return compile_classpath | v::transform(library_from_jar) | to_vector();
     }
 
     vector<LibraryDep> collect_library_deps() const {
@@ -203,11 +209,12 @@ struct GradleBuildOutput {
     WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
         auto active = active_projects() | to_vector();
 
-        // Compute active source sets once per project to avoid redundant filtering.
         auto to_active_sets = [&](const auto& p) { return p.active_sets(options); };
         auto sets_per_project = active | v::transform(to_active_sets) | to_vector();
 
-        auto to_libs = [&](const auto& ss) { return ss.collect_libraries(options.attach_sources); };
+        auto to_libs = [&](const auto& ss) {
+            return options.attach_sources ? ss.collect_libraries_with_sources() : ss.collect_libraries();
+        };
 
         WorkspaceData ws;
         for (const auto& [proj, sets] : v::zip(active, sets_per_project)) {
@@ -218,6 +225,13 @@ struct GradleBuildOutput {
 
         // Deduplicate libraries by name, keeping first occurrence.
         ws.libraries = std::move(ws.libraries) | unique_by(&LibraryData::name);
+
+        if (options.attach_sources) {
+            const auto with_sources =
+                static_cast<size_t>(r::count_if(ws.libraries, [](const auto& lib) { return lib.roots.size() > 1; }));
+            spdlog::info("  sources attached to {}/{} libraries", with_sources, ws.libraries.size());
+        }
+
         return ws;
     }
 };

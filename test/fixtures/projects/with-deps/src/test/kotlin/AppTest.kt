@@ -3,7 +3,7 @@ import kotlin.test.assertEquals
 
 class AppTest {
     @Test
-    fun `greet joins names`() {
-        assertEquals("Alice, Bob", greet(listOf("Alice", "Bob")))
+    fun `builds url with path segment`() {
+        assertEquals("https://example.com/api", buildUrl("https://example.com", "api"))
     }
 }

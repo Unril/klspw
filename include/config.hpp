@@ -123,10 +123,10 @@ class Config {
     static Config from_yaml(const fs::path& config_path) {
         const auto resolved = resolve_path(config_path);
         require(fs::exists(resolved), "Config file not found: {}", resolved);
-        spdlog::debug("Loading config: {}", resolved.string());
+        spdlog::info("Loading config: {}", resolved.string());
         auto data = ConfigData::from_yaml(read_file(resolved));
         auto cfg = Config{std::move(data), resolved};
-        spdlog::debug("Config loaded: {} root(s), jvm_target={}, workspace_file={}",
+        spdlog::info("Config loaded: {} root(s), jvm_target={}, workspace_file={}",
             cfg.roots().size(),
             cfg.jvm_target(),
             cfg.data_.workspace_file.empty() ? "(not set)" : cfg.data_.workspace_file);

@@ -357,7 +357,7 @@ TEST_CASE("SourceSet::collect_libraries builds one library per jar") {
     })");
 
     const auto& ss = output.projects[0].source_sets[0];
-    const auto libs = ss.collect_libraries(false);
+    const auto libs = ss.collect_libraries();
 
     REQUIRE(libs.size() == 2);
     CHECK(libs[0].name == "kotlin-stdlib-2.0.0");
@@ -609,7 +609,7 @@ TEST_CASE("SourceSet::library_from_jar uses source_classpath when available") {
     })");
 
     const auto& ss = output.projects[0].source_sets[0];
-    const auto libs = ss.collect_libraries(true);
+    const auto libs = ss.collect_libraries_with_sources();
 
     REQUIRE(libs.size() == 1);
     CHECK(libs[0].name == "kotlin-stdlib-2.0");
@@ -620,7 +620,7 @@ TEST_CASE("SourceSet::library_from_jar uses source_classpath when available") {
     CHECK(libs[0].roots[1].type == "SOURCES");
 }
 
-TEST_CASE("SourceSet::library_from_jar skips sources when attach_sources=false") {
+TEST_CASE("SourceSet::library_from_jar skips sources when no resolver") {
     const auto output = klspw::parse_gradle_output(R"({
         "rootProject": "/tmp/proj",
         "projects": [{
@@ -645,7 +645,7 @@ TEST_CASE("SourceSet::library_from_jar skips sources when attach_sources=false")
     })");
 
     const auto& ss = output.projects[0].source_sets[0];
-    const auto libs = ss.collect_libraries(false);
+    const auto libs = ss.collect_libraries();
 
     REQUIRE(libs.size() == 1);
     CHECK(libs[0].roots.size() == 1);

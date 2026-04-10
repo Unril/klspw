@@ -35,6 +35,7 @@ class Pipeline {
             workspace.modules.size(),
             workspace.libraries.size(),
             workspace.kotlin_settings.size());
+        log_workspace_details(workspace);
         return workspace;
     }
 
@@ -52,52 +53,77 @@ class Pipeline {
         spdlog::info("Wrote {} ({} bytes)", ws_path.string(), json->size());
     }
 
-    /// Build workspace and log a summary of modules, libraries, and settings.
-    void log_workspace() const { log_workspace_summary(build_workspace()); }
+    /// Build workspace and log a full summary at info level (for inspect subcommand).
+    void log_workspace() const {
+        const auto ws = build_workspace();
+        log_workspace_summary(ws, spdlog::level::info);
+    }
 
   private:
-    /// Log a human-readable summary of workspace contents.
-    static void log_workspace_summary(const WorkspaceData& ws) {
-        spdlog::info("Modules ({}):", ws.modules.size());
+    /// Log workspace contents at the given level (used by inspect at info, by build at debug).
+    static void log_workspace_summary(const WorkspaceData& ws, spdlog::level::level_enum level) {
+        spdlog::log(level, "Modules ({}):", ws.modules.size());
         for (const auto& mod : ws.modules) {
             const auto lib_deps =
                 r::count_if(mod.dependencies, [](const auto& d) { return std::holds_alternative<LibraryDep>(d); });
-            spdlog::info("  {} ({} deps, {} content root(s))", mod.name, lib_deps, mod.content_roots.size());
+            spdlog::log(level, "  {} ({} deps, {} content root(s))", mod.name, lib_deps, mod.content_roots.size());
             for (const auto& cr : mod.content_roots) {
-                spdlog::info("    root: {} ({} source root(s))", cr.path, cr.source_roots.size());
+                spdlog::log(level, "    root: {} ({} source root(s))", cr.path, cr.source_roots.size());
+                for (const auto& sr : cr.source_roots) {
+                    spdlog::log(level, "      {} [{}]", sr.path, sr.type);
+                }
             }
         }
 
-        spdlog::info("Libraries ({}):", ws.libraries.size());
+        /// Path markers that identify cache directories for compact library path display.
+        static constexpr std::array cache_path_markers = {"/caches/", "/packages/"};
+
+        spdlog::log(level, "Libraries ({}):", ws.libraries.size());
+        set<string> cache_prefixes;
         for (const auto& lib : ws.libraries) {
-            spdlog::info("  {} ({} root(s))", lib.name, lib.roots.size());
+            spdlog::log(level, "  {} ({} root(s))", lib.name, lib.roots.size());
+            for (const auto& root : lib.roots) {
+                auto [display, stripped] = strip_prefixes(root.path, cache_path_markers);
+                if (!stripped.empty()) {
+                    cache_prefixes.emplace(stripped);
+                    spdlog::log(level, "    .../{}  [{}]", display, root.type);
+                } else {
+                    spdlog::log(level, "    {}  [{}]", display, root.type);
+                }
+            }
+        }
+        for (const auto& prefix : cache_prefixes) {
+            spdlog::log(level, "  (cache: {})", prefix);
         }
 
-        spdlog::info("Kotlin settings ({}):", ws.kotlin_settings.size());
+        spdlog::log(level, "Kotlin settings ({}):", ws.kotlin_settings.size());
         for (const auto& ks : ws.kotlin_settings) {
-            spdlog::info("  module={}, {} source root(s), {} pure-kotlin folder(s)",
+            spdlog::log(level,
+                "  module={}, {} source root(s), {} pure-kotlin folder(s)",
                 ks.module,
                 ks.source_roots.size(),
                 ks.pure_kotlin_source_folders.size());
         }
     }
 
+    /// Log workspace details at debug level (called after build_workspace).
+    static void log_workspace_details(const WorkspaceData& ws) { log_workspace_summary(ws, spdlog::level::debug); }
+
     WorkspaceData build_root_workspace(const RootEntry& root) const {
         const auto build = cfg_.build_for(root);
         const auto root_path = cfg_.root_path(root);
-        const auto module_name = root_path.filename().string();
         spdlog::info("Processing root: {}", root_path.string());
-        spdlog::debug("  build command: {}", join(build.command));
-        spdlog::debug("  gradle args: {}", build.gradle_args.empty() ? "(none)" : join(build.gradle_args));
+        spdlog::info("  build command: {}", join(build.command));
+        spdlog::info("  gradle args: {}", build.gradle_args.empty() ? "(none)" : join(build.gradle_args));
 
         const auto raw_output = run_gradle_(build, root_path);
-        spdlog::debug("  Gradle raw output: {} bytes", raw_output.size());
+        spdlog::info("  Gradle raw output: {} bytes", raw_output.size());
 
         const auto json_str = extract_gradle_json(raw_output);
-        spdlog::debug("  extracted JSON: {} bytes", json_str.size());
+        spdlog::info("  extracted JSON: {} bytes", json_str.size());
 
         if (!gradle_output_path_.empty()) {
-            save_gradle_output(module_name, raw_output, json_str);
+            save_gradle_output(raw_output, json_str);
         }
 
         const auto build_output = parse_gradle_output(json_str);
@@ -121,29 +147,23 @@ class Pipeline {
         }
 
         const auto ws = build_output.to_workspace(cfg_.compiler_arguments_json(), cfg_.options());
-        spdlog::debug("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)",
+        spdlog::info("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)",
             ws.modules.size(),
             ws.libraries.size(),
             ws.kotlin_settings.size());
         return ws;
     }
 
-    void save_gradle_output(const string& root_name, string_view raw_output, string_view extracted_json) const {
-        const auto p = fs::path{gradle_output_path_};
-        if (fs::is_directory(p) || p.string().ends_with("/")) {
-            // Directory mode: save both raw and extracted JSON with default names.
-            fs::create_directories(p);
-            write_file(p / format("{}_raw.txt", root_name), raw_output);
-            write_file(p / format("{}.json", root_name), extracted_json);
-            spdlog::info("  Saved gradle output to {}/{}[_raw.txt|.json]", p.string(), root_name);
-        } else {
-            // File mode: save raw output to the specified path.
-            if (const auto parent = p.parent_path(); !parent.empty()) {
-                fs::create_directories(parent);
-            }
-            write_file(p, raw_output);
-            spdlog::info("  Saved gradle output to {}", p.string());
+    /// Save Gradle output to the configured path.
+    /// .json extension saves extracted JSON; .txt (or anything else) saves raw output.
+    void save_gradle_output(string_view raw_output, string_view extracted_json) const {
+        const fs::path p{gradle_output_path_};
+        if (const auto parent = p.parent_path(); !parent.empty()) {
+            fs::create_directories(parent);
         }
+        const auto content = p.extension() == ".json" ? extracted_json : raw_output;
+        write_file(p, content);
+        spdlog::info("  Saved gradle output to {}", p.string());
     }
 
     Config cfg_;

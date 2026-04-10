@@ -1,0 +1,7 @@
+version: 1
+workspace_file: ./workspace.json
+build:
+  command: ["gradle"]
+  gradle_args: ["--quiet"]
+roots:
+  - path: .

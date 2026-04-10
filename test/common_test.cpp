@@ -220,3 +220,111 @@ TEST_CASE("require evaluates callable lazily") {
     CHECK_THROWS_AS(klspw::require(false, "msg: {}", lazy), std::runtime_error);
     CHECK(call_count == 1); // called on failure
 }
+
+// --- find_entry / find_dir / find_file ---
+
+TEST_CASE("find_dir finds directory matching suffix") {
+    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test";
+    std::filesystem::create_directories(dir / "a" / "b" / "target-dir");
+
+    const auto result = klspw::find_dir(dir, "target-dir");
+    REQUIRE(result.has_value());
+    CHECK(result->string().ends_with("target-dir"));
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("find_dir matches multi-component suffix") {
+    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test2";
+    std::filesystem::create_directories(dir / "src" / "main" / "java");
+
+    const auto result = klspw::find_dir(dir, "/main/java");
+    REQUIRE(result.has_value());
+    CHECK(result->string().ends_with("/main/java"));
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("find_dir returns nullopt when no match") {
+    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test3";
+    std::filesystem::create_directories(dir / "empty");
+
+    CHECK_FALSE(klspw::find_dir(dir, "nonexistent").has_value());
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("find_file finds regular file matching suffix") {
+    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test4";
+    std::filesystem::create_directories(dir / "nested");
+    klspw::write_file(dir / "nested" / "lib-1.0-sources.jar", "");
+
+    const auto result = klspw::find_file(dir, "-sources.jar");
+    REQUIRE(result.has_value());
+    CHECK(result->string().ends_with("-sources.jar"));
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("find_file ignores directories with matching name") {
+    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test5";
+    std::filesystem::create_directories(dir / "fake-sources.jar"); // directory, not file
+
+    CHECK_FALSE(klspw::find_file(dir, "-sources.jar").has_value());
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("find_dir ignores files with matching name") {
+    const auto dir = std::filesystem::temp_directory_path() / "klspw_find_test6";
+    std::filesystem::create_directories(dir);
+    klspw::write_file(dir / "target-dir", ""); // file, not directory
+
+    CHECK_FALSE(klspw::find_dir(dir, "target-dir").has_value());
+
+    std::filesystem::remove_all(dir);
+}
+
+// --- strip_prefixes ---
+
+TEST_CASE("strip_prefixes strips at first matching marker") {
+    constexpr std::array markers = {"/caches/", "/packages/"};
+    const auto [suffix, prefix] = klspw::strip_prefixes("/Users/me/.gradle/caches/modules/lib.jar", markers);
+    CHECK(suffix == "modules/lib.jar");
+    CHECK(prefix == "/Users/me/.gradle/caches/");
+}
+
+TEST_CASE("strip_prefixes matches packages marker") {
+    constexpr std::array markers = {"/caches/", "/packages/"};
+    const auto [suffix, prefix] = klspw::strip_prefixes("/vol/pkg-cache/packages/Foo/Foo-1.0/lib.jar", markers);
+    CHECK(suffix == "Foo/Foo-1.0/lib.jar");
+    CHECK(prefix == "/vol/pkg-cache/packages/");
+}
+
+TEST_CASE("strip_prefixes returns full path when no marker matches") {
+    constexpr std::array markers = {"/caches/", "/packages/"};
+    const auto [suffix, prefix] = klspw::strip_prefixes("/home/user/project/build/lib.jar", markers);
+    CHECK(suffix == "/home/user/project/build/lib.jar");
+    CHECK(prefix.empty());
+}
+
+TEST_CASE("strip_prefixes with empty markers returns full path") {
+    const std::vector<std::string_view> markers;
+    const auto [suffix, prefix] = klspw::strip_prefixes("/some/path", markers);
+    CHECK(suffix == "/some/path");
+    CHECK(prefix.empty());
+}
+
+TEST_CASE("strip_prefixes prefers first matching marker") {
+    constexpr std::array markers = {"/a/", "/b/"};
+    const auto [suffix, prefix] = klspw::strip_prefixes("/root/a/b/file", markers);
+    CHECK(suffix == "b/file");
+    CHECK(prefix == "/root/a/");
+}
+
+TEST_CASE("strip_prefixes with marker at start") {
+    constexpr std::array markers = {"/caches/"};
+    const auto [suffix, prefix] = klspw::strip_prefixes("/caches/lib.jar", markers);
+    CHECK(suffix == "lib.jar");
+    CHECK(prefix == "/caches/");
+}

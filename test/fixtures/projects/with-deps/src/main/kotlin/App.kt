@@ -1,8 +1,8 @@
-import com.google.common.base.Joiner
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
-fun greet(names: List<String>): String =
-    Joiner.on(", ").join(names)
+fun buildUrl(base: String, path: String): String =
+    base.toHttpUrl().newBuilder().addPathSegment(path).build().toString()
 
 fun main() {
-    println(greet(listOf("Alice", "Bob")))
+    println(buildUrl("https://example.com", "api"))
 }
