@@ -7,9 +7,14 @@ Targets repositories where the default kotlin-lsp project import does not work -
 ## Quick start
 
 ```bash
+# Homebrew (macOS)
+brew install Unril/tap/klspw
+
+# From source
 brew install cmake ninja just
-export VCPKG_ROOT="$HOME/vcpkg"  # or wherever your vcpkg checkout lives
+export VCPKG_ROOT="$HOME/vcpkg"
 just check                        # configure + build + test
+just install                      # release build + install to /usr/local
 ```
 
 ## Usage
@@ -122,6 +127,9 @@ just configure   # cmake --preset dev
 just build       # cmake --build --preset dev
 just test        # ctest --preset dev
 just check       # all three
+just release     # configure + build + test with release preset
+just install     # release build + install to /usr/local
+just install /opt/klspw  # install to custom prefix
 
 # Integration tests (requires Gradle on PATH)
 just integration
@@ -143,8 +151,29 @@ All managed via vcpkg manifest mode.
 - [CMake Presets](https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html)
 - [vcpkg manifest mode](https://learn.microsoft.com/en-us/vcpkg/concepts/manifest-mode)
 
+## CI
+
+GitHub Actions runs on every push to `main` and on pull requests, building and testing on macOS arm64 and Intel. Pushing a `v*` tag also creates a GitHub Release automatically.
+
+## Publishing a release
+
+1. Update the version in `CMakeLists.txt` (`project(klspw VERSION x.y.z ...)`) and `vcpkg.json`.
+2. Commit, tag, and push:
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+3. CI builds and tests both architectures. The release workflow creates a GitHub Release with auto-generated notes.
+4. Get the tarball sha256:
+   ```bash
+   curl -sL https://github.com/Unril/klspw/archive/refs/tags/v0.2.0.tar.gz | shasum -a 256
+   ```
+5. In the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo, update `Formula/klspw.rb` with the new `url`, `sha256`, and version. Commit and push.
+
+Users upgrade with `brew upgrade klspw`.
+
 ## License
 
-TBD
+[MIT](LICENSE)
 
 [kotlin-lsp]: https://github.com/Kotlin/kotlin-lsp
