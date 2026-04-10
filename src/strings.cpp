@@ -3,8 +3,7 @@
 namespace klspw {
 
 opt_string extract_between(string_view input, Delimiters delimiters) {
-    require(!delimiters.open.empty(), "extract_between: open delimiter must not be empty");
-    require(!delimiters.close.empty(), "extract_between: close delimiter must not be empty");
+    delimiters.validate();
     const auto begin_pos = input.find(delimiters.open);
     if (begin_pos == string_view::npos) {
         return nullopt;

@@ -42,6 +42,11 @@ inline std::pair<string_view, string_view> strip_prefixes(string_view path, stri
 struct Delimiters {
     string_view open;
     string_view close;
+
+    void validate() const {
+        require(!open.empty(), "extract_between: open delimiter must not be empty");
+        require(!close.empty(), "extract_between: close delimiter must not be empty");
+    }
 };
 
 /// Extract the substring between two delimiters, trimmed.

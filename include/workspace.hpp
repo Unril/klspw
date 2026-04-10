@@ -139,10 +139,9 @@ struct ModuleData {
         const auto is_dep = [](const auto& d) { return std::holds_alternative<LibraryDep>(d); };
         const auto deps_count = r::count_if(dependencies, is_dep);
         ctx.add(format("  {} ({} deps, {} content root(s))", name, deps_count, content_roots.size()));
-        if (!ctx.verbose()) {
-            return;
+        if (ctx.verbose()) {
+            ctx.describe(content_roots);
         }
-        ctx.describe(content_roots);
     }
 };
 
@@ -174,10 +173,9 @@ struct LibraryData {
 
     void describe(DescribeContext& ctx) const {
         ctx.add(format("  {} ({} root(s))", name, roots.size()));
-        if (!ctx.verbose()) {
-            return;
+        if (ctx.verbose()) {
+            ctx.describe(roots);
         }
-        ctx.describe(roots);
     }
 };
 

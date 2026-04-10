@@ -70,7 +70,7 @@ class Pipeline {
         const auto root_path = cfg_.root_path(root);
         spdlog::info("Processing root: {}", root_path.string());
         spdlog::info("  build command: {}", join(build.command));
-        spdlog::info("  gradle args: {}", build.gradle_args.empty() ? "(none)" : join(build.gradle_args));
+        spdlog::info("  gradle args: {}", build.has_args() ? join(build.gradle_args) : "(none)");
 
         const auto raw_output = run_gradle_(build, root_path);
         spdlog::info("  Gradle output: {} bytes", raw_output.size());

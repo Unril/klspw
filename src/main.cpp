@@ -71,23 +71,17 @@ int main(int argc, char* argv[]) try {
     set_log_level(log_level);
 
     if (init->parsed()) {
-        namespace fs = std::filesystem;
-        const auto root = fs::path{init_root};
-        const auto cfg_path = config_path.empty() ? fs::path{} : klspw::Config::resolve_path(config_path);
-        const auto cfg_dir = cfg_path.empty() ? fs::current_path() : fs::weakly_canonical(cfg_path).parent_path();
-        const klspw::StarterConfig starter{root, cfg_dir, init_jvm_target};
+        auto starter = klspw::StarterConfig{init_root}.set_jvm_target(init_jvm_target).set_config_path(config_path);
 
-        if (cfg_path.empty()) {
-            std::cout << starter.to_yaml();
+        if (!starter.config_path().empty()) {
+            starter.save_yaml_file();
         } else {
-            starter.save_yaml_file(cfg_path);
-            spdlog::info("Wrote config to {}", cfg_path.string());
+            std::cout << starter.to_yaml();
         }
         return 0;
     }
 
-    // All other subcommands require --config.
-    klspw::require(!config_path.empty(), "--config is required for this subcommand");
+    // All other subcommands use --config (defaults to ./klspw.yaml).
     auto cfg = klspw::Config::load_yaml_file(config_path);
 
     if (val->parsed()) {
