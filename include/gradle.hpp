@@ -138,6 +138,7 @@ struct GradleProject {
     opt_string skip_reason; ///< If set, project is excluded from workspace generation.
 
     bool is_skipped() const { return skip_reason.has_value(); }
+
     string module_name() const { return fs::path{project_dir}.filename().string(); }
 
     void describe(DescribeContext& ctx) const {
@@ -146,7 +147,7 @@ struct GradleProject {
             return;
         }
         ctx.add(format("  {} ({} source set(s), {} plugin(s))", project_path, source_sets.size(), plugins.size()));
-        ctx.describe_each(source_sets);
+        ctx.describe(source_sets);
     }
 
     /// Return source sets to include in the workspace. Filters out test sets when disabled.
@@ -223,7 +224,7 @@ struct GradleBuildOutput {
 
     void describe(DescribeContext& ctx) const {
         ctx.add(format("{} project(s), {} active", projects.size(), active_project_count()));
-        ctx.describe_each(projects);
+        ctx.describe(projects);
     }
 
     /// Convert all active projects into a merged WorkspaceData.
@@ -249,9 +250,7 @@ struct GradleBuildOutput {
         ws.libraries = std::move(ws.libraries) | unique_by(&LibraryData::name);
 
         if (options.attach_sources) {
-            // Libraries with >1 root have at least one SOURCES entry (CLASSES is always first).
-            const auto with_sources =
-                static_cast<size_t>(r::count_if(ws.libraries, [](const auto& lib) { return lib.roots.size() > 1; }));
+            const auto with_sources = r::count_if(ws.libraries, &LibraryData::with_sources);
             spdlog::info("  sources attached to {}/{} libraries", with_sources, ws.libraries.size());
         }
 

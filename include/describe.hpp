@@ -42,25 +42,32 @@ class DescribeContext {
         return string{display};
     }
 
-    /// Describe each element in a range of Describable elements.
-    template <r::input_range R>
-        requires Describable<r::range_value_t<R>>
-    void describe_each(const R& range) {
-        for (const auto& elem : range) {
-            elem.describe(*this);
-        }
-    }
-
     /// Add a section header and describe each element in the range.
     template <r::input_range R>
         requires Describable<r::range_value_t<R>>
     void describe_section(string header, const R& range) {
         add(std::move(header));
-        describe_each(range);
+        describe(range);
+    }
+
+    /// Describe each element in a range of Describable elements.
+    template <r::input_range R>
+        requires Describable<r::range_value_t<R>>
+    void describe(const R& range) {
+        for (const auto& elem : range) {
+            elem.describe(*this);
+        }
     }
 
     /// Describe a single Describable element.
-    template <Describable T> void describe_one(const T& item) { item.describe(*this); }
+    template <Describable T> void describe(const T& item) { item.describe(*this); }
+
+    /// Describe an optional element. No-op if empty.
+    template <Describable T> void describe(const optional<T>& item) {
+        if (item) {
+            item->describe(*this);
+        }
+    }
 
     /// Flush accumulated cache prefix summary lines.
     void flush_stripped_prefixes() {

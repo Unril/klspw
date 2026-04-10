@@ -25,8 +25,15 @@ using GradleBuildFn = std::function<string(const BuildConfig&, const fs::path&)>
 /// Movable but not copyable (unique ownership of the temp init script file).
 class GradleRunner {
   public:
-    GradleRunner(const GradleRunner&) = delete;
-    GradleRunner& operator=(const GradleRunner&) = delete;
+    /// Uses system temp dir for the init script.
+    GradleRunner() : GradleRunner(fs::temp_directory_path() / "klspw") {}
+
+    /// Explicit temp directory (for testing).
+    explicit GradleRunner(const fs::path& temp_dir) : init_script_path_{write_init_script(temp_dir)} {
+        spdlog::debug("GradleRunner: init script at {}", init_script_path_.string());
+    }
+
+    ~GradleRunner() noexcept { close(); }
 
     GradleRunner(GradleRunner&& other) noexcept : init_script_path_{std::move(other.init_script_path_)} {
         other.init_script_path_.clear();
@@ -41,15 +48,8 @@ class GradleRunner {
         return *this;
     }
 
-    /// Uses system temp dir for the init script.
-    GradleRunner() : GradleRunner(fs::temp_directory_path() / "klspw") {}
-
-    /// Explicit temp directory (for testing).
-    explicit GradleRunner(const fs::path& temp_dir) : init_script_path_{write_init_script(temp_dir)} {
-        spdlog::debug("GradleRunner: init script at {}", init_script_path_.string());
-    }
-
-    ~GradleRunner() noexcept { close(); }
+    GradleRunner(const GradleRunner&) = delete;
+    GradleRunner& operator=(const GradleRunner&) = delete;
 
     /// Remove the init script from disk.
     /// Safe to call multiple times -- subsequent calls are no-ops.

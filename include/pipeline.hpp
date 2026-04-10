@@ -33,7 +33,7 @@ class Pipeline {
     /// Run Gradle on each root and merge results into a single WorkspaceData.
     [[nodiscard]] WorkspaceData build_workspace() const {
         WorkspaceData ws;
-        for (const auto& root : cfg_.roots()) {
+        for (const auto& root : cfg_.data().roots) {
             ws.merge(build_root_workspace(root));
         }
         spdlog::info("Pipeline complete: {} module(s), {} library(ies), {} kotlin setting(s)",
@@ -52,12 +52,8 @@ class Pipeline {
         require(!ws_path.empty(), "workspace_file not configured in config");
 
         const auto workspace = build_workspace();
-
-        const auto json = glz::write<ws_write_opts>(workspace);
-        require(json.has_value(), "Failed to serialize workspace JSON");
-
-        write_file(ws_path, json.value());
-        spdlog::info("Wrote {} ({} bytes)", ws_path.string(), json->size());
+        workspace.save_json_file(ws_path);
+        spdlog::info("Wrote {}", ws_path.string());
     }
 
     /// Build workspace and log a full summary at info level (for inspect subcommand).
@@ -70,7 +66,7 @@ class Pipeline {
 
   private:
     WorkspaceData build_root_workspace(const RootEntry& root) const {
-        const auto build = cfg_.build_for(root);
+        const auto build = cfg_.data().build_for(root);
         const auto root_path = cfg_.root_path(root);
         spdlog::info("Processing root: {}", root_path.string());
         spdlog::info("  build command: {}", join(build.command));
@@ -88,7 +84,7 @@ class Pipeline {
         build_output.describe(build_ctx);
         build_ctx.log(spdlog::level::info);
 
-        WorkspaceData ws = build_output.to_workspace(cfg_.compiler_arguments_json(), cfg_.options());
+        WorkspaceData ws = build_output.to_workspace(cfg_.data().compiler_arguments_json(), cfg_.data().options);
         spdlog::info("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)",
             ws.modules.size(),
             ws.libraries.size(),

@@ -66,11 +66,12 @@ TEST_CASE("to_yaml with per-root build overrides round-trips") {
     CHECK(parsed.roots[1].build->gradle_args == klspw::strings{"--no-daemon"});
 }
 
-// --- Config::make_starter ---
+// --- StarterConfig ---
 
-TEST_CASE("make_starter produces valid config data") {
+TEST_CASE("StarterConfig produces valid config data") {
     const TempDir root_dir;
-    const auto data = klspw::Config::make_starter(root_dir.path, root_dir.path.parent_path());
+    const klspw::StarterConfig starter{root_dir.path, root_dir.path.parent_path()};
+    const auto data = starter.to_config_data();
 
     CHECK(data.version == 1);
     CHECK(data.workspace_file == "./workspace.json");
@@ -80,45 +81,46 @@ TEST_CASE("make_starter produces valid config data") {
     CHECK(data.roots[0].path.starts_with("./"));
 }
 
-TEST_CASE("make_starter root path is relative to config_dir") {
+TEST_CASE("StarterConfig root path is relative to config_dir") {
     const TempDir root_dir;
     const auto parent = std::filesystem::weakly_canonical(root_dir.path.parent_path());
-    const auto data = klspw::Config::make_starter(root_dir.path, parent);
+    const auto data = klspw::StarterConfig{root_dir.path, parent}.to_config_data();
 
     const auto expected = "./" + root_dir.path.filename().string();
     CHECK(data.roots[0].path == expected);
 }
 
-TEST_CASE("make_starter respects custom jvm_target") {
+TEST_CASE("StarterConfig respects custom jvm_target") {
     const TempDir root_dir;
-    const auto data = klspw::Config::make_starter(root_dir.path, root_dir.path.parent_path(), "17");
+    const auto data = klspw::StarterConfig{root_dir.path, root_dir.path.parent_path(), "17"}.to_config_data();
     CHECK(data.jvm_target == "17");
 }
 
-TEST_CASE("make_starter output passes ConfigData::validate") {
+TEST_CASE("StarterConfig output passes ConfigData::validate") {
     const TempDir root_dir;
-    const auto data = klspw::Config::make_starter(root_dir.path, root_dir.path.parent_path());
+    const auto data = klspw::StarterConfig{root_dir.path, root_dir.path.parent_path()}.to_config_data();
     CHECK_NOTHROW(data.validate());
 }
 
-TEST_CASE("make_starter throws on nonexistent root") {
-    CHECK_THROWS_WITH_AS(klspw::Config::make_starter("/tmp/klspw_nonexistent_dir_xyz", "/tmp"),
+TEST_CASE("StarterConfig throws on nonexistent root") {
+    CHECK_THROWS_WITH_AS(klspw::StarterConfig("/tmp/klspw_nonexistent_dir_xyz", "/tmp"),
         doctest::Contains("must be an existing directory"),
         std::runtime_error);
 }
 
-// --- End-to-end: make_starter -> to_yaml -> from_yaml ---
+// --- End-to-end: StarterConfig -> to_yaml -> Config::from_yaml ---
 
-TEST_CASE("make_starter to_yaml round-trips through Config::from_yaml") {
+TEST_CASE("StarterConfig to_yaml round-trips through Config::from_yaml") {
     const TempDir root_dir;
-    const auto yaml = klspw::Config::make_starter(root_dir.path, root_dir.path).to_yaml();
+    const auto input_config = klspw::StarterConfig{root_dir.path, root_dir.path};
 
     // Write inside root_dir so TempDir RAII handles cleanup.
     const auto config_path = root_dir.path / "config.yaml";
-    klspw::write_file(config_path, yaml);
+    input_config.save_yaml_file(config_path);
 
-    const auto cfg = klspw::Config::from_yaml(config_path);
-    CHECK(cfg.version() == 1);
-    CHECK(cfg.jvm_target() == "21");
-    REQUIRE(cfg.roots().size() == 1);
+    const auto cfg = klspw::Config::load_yaml_file(config_path);
+    const auto& data = cfg.data();
+    CHECK(data.version == 1);
+    CHECK(data.jvm_target == "21");
+    REQUIRE(data.roots.size() == 1);
 }

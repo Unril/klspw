@@ -75,12 +75,12 @@ int main(int argc, char* argv[]) try {
         const auto root = fs::path{init_root};
         const auto cfg_path = config_path.empty() ? fs::path{} : klspw::Config::resolve_path(config_path);
         const auto cfg_dir = cfg_path.empty() ? fs::current_path() : fs::weakly_canonical(cfg_path).parent_path();
-        const auto data = klspw::Config::make_starter(root, cfg_dir, init_jvm_target);
+        const klspw::StarterConfig starter{root, cfg_dir, init_jvm_target};
 
         if (cfg_path.empty()) {
-            std::cout << data.to_yaml();
+            std::cout << starter.to_yaml();
         } else {
-            klspw::write_file(cfg_path, data.to_yaml());
+            starter.save_yaml_file(cfg_path);
             spdlog::info("Wrote config to {}", cfg_path.string());
         }
         return 0;
@@ -88,7 +88,7 @@ int main(int argc, char* argv[]) try {
 
     // All other subcommands require --config.
     klspw::require(!config_path.empty(), "--config is required for this subcommand");
-    auto cfg = klspw::Config::from_yaml(config_path);
+    auto cfg = klspw::Config::load_yaml_file(config_path);
 
     if (val->parsed()) {
         cfg.validate();

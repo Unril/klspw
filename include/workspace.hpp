@@ -12,6 +12,7 @@
 
 #include "common.hpp"
 #include "describe.hpp"
+#include "files.hpp"
 #include "ranges.hpp"
 
 namespace klspw {
@@ -39,7 +40,7 @@ struct ContentRootData {
 
     void describe(DescribeContext& ctx) const {
         ctx.add(format("    root: {} ({} source root(s))", path, source_roots.size()));
-        ctx.describe_each(source_roots);
+        ctx.describe(source_roots);
     }
 };
 
@@ -135,13 +136,13 @@ struct ModuleData {
     vector<FacetData> facets; ///< Framework facets (Spring, JPA). Usually empty.
 
     void describe(DescribeContext& ctx) const {
-        const auto lib_deps =
-            r::count_if(dependencies, [](const auto& d) { return std::holds_alternative<LibraryDep>(d); });
-        ctx.add(format("  {} ({} deps, {} content root(s))", name, lib_deps, content_roots.size()));
+        const auto is_dep = [](const auto& d) { return std::holds_alternative<LibraryDep>(d); };
+        const auto deps_count = r::count_if(dependencies, is_dep);
+        ctx.add(format("  {} ({} deps, {} content root(s))", name, deps_count, content_roots.size()));
         if (!ctx.verbose()) {
             return;
         }
-        ctx.describe_each(content_roots);
+        ctx.describe(content_roots);
     }
 };
 
@@ -168,12 +169,15 @@ struct LibraryData {
     strings excluded_roots; ///< Paths to exclude from classpath.
     optional<XmlElement> properties; ///< Maven coordinates or other metadata as XML.
 
+    /// Libraries with >1 root have at least one SOURCES entry (CLASSES is always first).
+    bool with_sources() const { return roots.size() > 1; }
+
     void describe(DescribeContext& ctx) const {
         ctx.add(format("  {} ({} root(s))", name, roots.size()));
         if (!ctx.verbose()) {
             return;
         }
-        ctx.describe_each(roots);
+        ctx.describe(roots);
     }
 };
 
@@ -273,12 +277,31 @@ struct WorkspaceData {
         libraries = std::move(libraries) | unique_by(&LibraryData::name);
     }
 
+    /// Serialize to pretty-printed JSON matching the kotlin-lsp workspace.json schema.
+    string to_json() const {
+        auto json = glz::write<ws_write_opts>(*this);
+        require(json.has_value(), "Failed to serialize workspace JSON");
+        return std::move(json).value();
+    }
+
+    /// Deserialize from a JSON string. Ignores unknown keys for forward compatibility.
+    static WorkspaceData from_json(string_view json_str) {
+        WorkspaceData ws;
+        const auto ec = glz::read<ws_read_opts>(ws, json_str);
+        require(!ec, "Failed to parse workspace JSON: {}", [&] { return glz::format_error(ec, json_str); });
+        return ws;
+    }
+
+    /// Write workspace.json to a file.
+    void save_json_file(const fs::path& path) const { write_file(path, to_json()); }
+
+    /// Read workspace.json from a file.
+    static WorkspaceData load_json_file(const fs::path& path) { return from_json(read_file(path)); }
+
     void describe(DescribeContext& ctx) const {
         ctx.describe_section(format("Modules ({}):", modules.size()), modules);
-
         ctx.describe_section(format("Libraries ({}):", libraries.size()), libraries);
         ctx.flush_stripped_prefixes();
-
         ctx.describe_section(format("Kotlin settings ({}):", kotlin_settings.size()), kotlin_settings);
     }
 };

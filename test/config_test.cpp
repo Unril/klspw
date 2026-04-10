@@ -7,44 +7,45 @@
 #include "test_common.hpp"
 
 TEST_CASE("parses example config file") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
+    const auto cfg = klspw::Config::load_yaml_file("test/fixtures/example_config.yaml");
+    const auto& data = cfg.data();
 
-    CHECK(cfg.version() == 1);
-    CHECK(cfg.jvm_target() == "21");
+    CHECK(data.version == 1);
+    CHECK(data.jvm_target == "21");
 
     SUBCASE("build section") {
-        REQUIRE(cfg.build().has_value());
-        CHECK(cfg.build()->command.size() == 2);
-        CHECK(cfg.build()->command[0] == "mybuild");
-        CHECK(cfg.build()->command[1] == "gradle");
-        CHECK(cfg.build()->gradle_args.size() == 1);
-        CHECK(cfg.build()->gradle_args[0] == "--quiet");
+        REQUIRE(data.build.has_value());
+        CHECK(data.build->command.size() == 2);
+        CHECK(data.build->command[0] == "mybuild");
+        CHECK(data.build->command[1] == "gradle");
+        CHECK(data.build->gradle_args.size() == 1);
+        CHECK(data.build->gradle_args[0] == "--quiet");
     }
 
     SUBCASE("roots") {
-        REQUIRE(cfg.roots().size() == 2);
-        CHECK(cfg.root_path(cfg.roots()[0]).filename() == "proj_1");
-        CHECK(cfg.root_path(cfg.roots()[1]).filename() == "proj_3");
+        REQUIRE(data.roots.size() == 2);
+        CHECK(cfg.root_path(data.roots[0]).filename() == "proj_1");
+        CHECK(cfg.root_path(data.roots[1]).filename() == "proj_3");
     }
 
     SUBCASE("options") {
-        CHECK(cfg.options().include_tests == false);
-        CHECK(cfg.options().attach_sources == true);
+        CHECK(data.options.include_tests == false);
+        CHECK(data.options.attach_sources == true);
     }
 }
 
 TEST_CASE("stores config file and dir") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
+    const auto cfg = klspw::Config::load_yaml_file("test/fixtures/example_config.yaml");
     CHECK(cfg.config_file().filename() == "example_config.yaml");
     CHECK(cfg.config_dir().filename() == "fixtures");
 }
 
 TEST_CASE("normalizes paths relative to config dir") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
+    const auto cfg = klspw::Config::load_yaml_file("test/fixtures/example_config.yaml");
     const auto config_dir = fs::absolute("test/fixtures").lexically_normal();
 
     CHECK(cfg.workspace_file() == config_dir / "workspace.json");
-    CHECK(cfg.root_path(cfg.roots()[0]) == config_dir / "src/proj_1");
+    CHECK(cfg.root_path(cfg.data().roots[0]) == config_dir / "src/proj_1");
 }
 
 TEST_CASE("applies default values for optional fields") {
@@ -53,12 +54,13 @@ version: 1
 roots:
   - path: ./src/proj
 )");
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
+    const auto& data = cfg.data();
 
-    CHECK(cfg.jvm_target() == "21");
-    CHECK(cfg.options().include_tests == true);
-    CHECK(cfg.options().attach_sources == true);
-    CHECK_FALSE(cfg.build().has_value());
+    CHECK(data.jvm_target == "21");
+    CHECK(data.options.include_tests == true);
+    CHECK(data.options.attach_sources == true);
+    CHECK_FALSE(data.build.has_value());
 }
 
 TEST_CASE("per-root build override") {
@@ -74,18 +76,19 @@ roots:
       command: ["gradle"]
       gradle_args: ["--no-daemon"]
 )");
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
+    const auto& data = cfg.data();
 
-    REQUIRE(cfg.roots().size() == 2);
+    REQUIRE(data.roots.size() == 2);
 
     SUBCASE("first root inherits global build") {
-        const auto& build = cfg.build_for(cfg.roots()[0]);
+        const auto& build = data.build_for(data.roots[0]);
         CHECK(build.command == klspw::strings{"./gradlew"});
         CHECK(build.gradle_args == klspw::strings{"--quiet"});
     }
 
     SUBCASE("second root uses per-root override") {
-        const auto& build = cfg.build_for(cfg.roots()[1]);
+        const auto& build = data.build_for(data.roots[1]);
         CHECK(build.command == klspw::strings{"gradle"});
         CHECK(build.gradle_args == klspw::strings{"--no-daemon"});
     }
@@ -97,7 +100,9 @@ version: 99
 roots:
   - path: ./src/proj
 )");
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("version"), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::load_yaml_file(tmp.path),
+        doctest::Contains("version"),
+        std::runtime_error);
 }
 
 TEST_CASE("throws on root entry missing path") {
@@ -106,7 +111,7 @@ version: 1
 roots:
   - command: ["./gradlew"]
 )");
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("path"), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::load_yaml_file(tmp.path), doctest::Contains("path"), std::runtime_error);
 }
 
 TEST_CASE("throws on missing version") {
@@ -114,18 +119,20 @@ TEST_CASE("throws on missing version") {
 roots:
   - path: ./src/proj
 )");
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("version"), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::load_yaml_file(tmp.path),
+        doctest::Contains("version"),
+        std::runtime_error);
 }
 
 TEST_CASE("throws on missing roots") {
     const TempConfig tmp(R"(
 version: 1
 )");
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml(tmp.path), doctest::Contains("roots"), std::runtime_error);
+    CHECK_THROWS_WITH_AS((void)klspw::Config::load_yaml_file(tmp.path), doctest::Contains("roots"), std::runtime_error);
 }
 
 TEST_CASE("throws on nonexistent file") {
-    CHECK_THROWS_WITH_AS((void)klspw::Config::from_yaml("/tmp/klspw_nonexistent_config.yaml"),
+    CHECK_THROWS_WITH_AS((void)klspw::Config::load_yaml_file("/tmp/klspw_nonexistent_config.yaml"),
         doctest::Contains("not found"),
         std::runtime_error);
 }
@@ -137,13 +144,13 @@ jvm_target: "17"
 roots:
   - path: ./src/proj
 )");
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
-    CHECK(cfg.jvm_target() == "17");
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
+    CHECK(cfg.data().jvm_target == "17");
 }
 
 TEST_CASE("compiler_arguments_json formats J-prefixed JSON") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const auto args = cfg.compiler_arguments_json();
+    const auto cfg = klspw::Config::load_yaml_file("test/fixtures/example_config.yaml");
+    const auto args = cfg.data().compiler_arguments_json();
 
     CHECK(args.starts_with("J{"));
     CHECK(args.ends_with("}"));
@@ -151,8 +158,8 @@ TEST_CASE("compiler_arguments_json formats J-prefixed JSON") {
 }
 
 TEST_CASE("BuildConfig::args_for produces correct argument order") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_config.yaml");
-    const auto args = cfg.build()->args_for("/tmp/init.gradle.kts");
+    const auto cfg = klspw::Config::load_yaml_file("test/fixtures/example_config.yaml");
+    const auto args = cfg.data().build->args_for("/tmp/init.gradle.kts");
 
     // mybuild gradle --init-script /tmp/init.gradle.kts --quiet dumpKotlinLspModel
     REQUIRE(args.size() == 6);
@@ -165,27 +172,28 @@ TEST_CASE("BuildConfig::args_for produces correct argument order") {
 }
 
 TEST_CASE("parses per-root build config without global build") {
-    const auto cfg = klspw::Config::from_yaml("test/fixtures/example_per_root_build_config.yaml");
+    const auto cfg = klspw::Config::load_yaml_file("test/fixtures/example_per_root_build_config.yaml");
+    const auto& data = cfg.data();
 
-    CHECK(cfg.version() == 1);
-    CHECK(cfg.jvm_target() == "21");
-    CHECK_FALSE(cfg.build().has_value());
-    CHECK(cfg.options().include_tests == true);
+    CHECK(data.version == 1);
+    CHECK(data.jvm_target == "21");
+    CHECK_FALSE(data.build.has_value());
+    CHECK(data.options.include_tests == true);
 
-    REQUIRE(cfg.roots().size() == 2);
+    REQUIRE(data.roots.size() == 2);
 
     SUBCASE("first root has its own build command") {
-        const auto& root = cfg.roots()[0];
+        const auto& root = data.roots[0];
         CHECK(cfg.root_path(root).filename() == "proj_1");
-        const auto& build = cfg.build_for(root);
+        const auto& build = data.build_for(root);
         CHECK(build.command == klspw::strings{"./gradlew"});
         CHECK(build.gradle_args == klspw::strings{"--quiet"});
     }
 
     SUBCASE("second root has different build command") {
-        const auto& root = cfg.roots()[1];
+        const auto& root = data.roots[1];
         CHECK(cfg.root_path(root).filename() == "proj_3");
-        const auto& build = cfg.build_for(root);
+        const auto& build = data.build_for(root);
         CHECK(build.command == klspw::strings{"gradle"});
         CHECK(build.gradle_args == klspw::strings{"--no-daemon", "--stacktrace"});
     }

@@ -63,12 +63,22 @@ struct BuildConfig {
     }
 
     [[nodiscard]] bool empty() const { return command.empty(); }
+
+    void describe(DescribeContext& ctx) const { ctx.add(format("  build: {} {}", join(command), join(gradle_args))); }
 };
 
 /// A project root to process. Optionally overrides the global build config.
 struct RootEntry {
     string path; ///< Relative or absolute path to the Gradle root project directory.
     optional<BuildConfig> build; ///< Per-root build override. Absent = inherit global.
+
+    void describe(DescribeContext& ctx) const {
+        auto line = format("  root: {}", path);
+        if (build) {
+            line += format(" (build: {})", join(build->command));
+        }
+        ctx.add(std::move(line));
+    }
 };
 
 /// Plain YAML-deserializable config data. Never mutated after deserialization.
@@ -89,6 +99,37 @@ struct ConfigData {
         }
     }
 
+    /// Resolve the effective build config for a root.
+    /// Uses per-root build if present, otherwise falls back to the global build.
+    /// Throws if neither is configured.
+    const BuildConfig& build_for(const RootEntry& root) const {
+        if (root.build) {
+            return *root.build;
+        }
+        require(build.has_value(), "no build command configured for root: {}", root.path);
+        return *build;
+    }
+
+    [[nodiscard]] bool has_any_build_command() const {
+        return build.has_value() || r::any_of(roots, [](const auto& entry) { return entry.build.has_value(); });
+    }
+
+    void describe(DescribeContext& ctx) const {
+        ctx.add(format("  {} root(s), jvm_target={}, workspace_file={}",
+            roots.size(),
+            jvm_target,
+            workspace_file.empty() ? "(not set)" : workspace_file));
+        if (!ctx.verbose()) {
+            return;
+        }
+        ctx.describe(build);
+        ctx.describe(roots);
+    }
+
+    /// Format compilerArguments for kotlin-lsp KotlinSettingsData.
+    /// J prefix is a kotlin-lsp convention: J-prefixed JSON string for compiler args.
+    string compiler_arguments_json() const { return format(R"(J{{"jvmTarget":"{}"}})", jvm_target); }
+
     /// Serialize to YAML string.
     string to_yaml() const {
         constexpr glz::opts yaml_opts{.format = glz::YAML, .skip_null_members = true, .prettify = true};
@@ -108,12 +149,49 @@ struct ConfigData {
     }
 };
 
+/// Generates a starter ConfigData for the `init` subcommand.
+///
+/// Constructed from a Gradle root path and a config directory. The root path
+/// is stored relative to config_dir in the generated YAML.
+class StarterConfig {
+  public:
+    static constexpr auto default_workspace_file = "./workspace.json"s;
+    static constexpr auto default_gradle_command = "./gradlew"s;
+
+    StarterConfig(const fs::path& root_path, const fs::path& config_dir, string jvm_target = "21"s)
+        : root_path_{fs::weakly_canonical(root_path)},
+          config_dir_{fs::weakly_canonical(config_dir)},
+          jvm_target_{std::move(jvm_target)} {
+        require(fs::is_directory(root_path), "root_path must be an existing directory: {}", root_path);
+    }
+
+    /// Build a ConfigData with paths relative to config_dir.
+    ConfigData to_config_data() const {
+        const auto rel = "./" + root_path_.lexically_relative(config_dir_).string();
+        return {
+            .version = 1,
+            .workspace_file = default_workspace_file,
+            .jvm_target = jvm_target_,
+            .build = BuildConfig{.command = {default_gradle_command}},
+            .roots = {{.path = rel}},
+        };
+    }
+
+    /// Serialize directly to YAML.
+    string to_yaml() const { return to_config_data().to_yaml(); }
+
+    void save_yaml_file(const fs::path& config_path) const { write_file(config_path, to_yaml()); }
+
+  private:
+    fs::path root_path_;
+    fs::path config_dir_;
+    string jvm_target_;
+};
+
 /// Loaded and validated config. Resolves relative paths against config_dir on demand.
 class Config {
   public:
-    static constexpr string_view default_filename = "klspw.yaml";
-    static constexpr string_view default_workspace_file = "./workspace.json";
-    static constexpr string_view default_gradle_command = "./gradlew";
+    static constexpr auto default_filename = "klspw.yaml"s;
 
     /// Resolve a config path: if it's a directory, append the default filename.
     static fs::path resolve_path(const fs::path& path) {
@@ -122,7 +200,7 @@ class Config {
 
     /// Load config from a YAML file. Validates after parsing.
     /// If config_path is a directory, appends "klspw.yaml".
-    static Config from_yaml(const fs::path& config_path) {
+    static Config load_yaml_file(const fs::path& config_path) {
         const auto resolved = resolve_path(config_path);
         require(fs::exists(resolved), "Config file not found: {}", resolved);
         spdlog::info("Loading config: {}", resolved.string());
@@ -134,59 +212,11 @@ class Config {
         return cfg;
     }
 
-    /// Save this config's data as YAML to a file.
-    void save(const fs::path& config_path) const { write_file(config_path, data_.to_yaml()); }
-
-    /// Serialize this config's data to a YAML string.
-    string to_yaml() const { return data_.to_yaml(); }
-
-    /// Build a starter ConfigData for a single Gradle root.
-    /// root_path is resolved relative to config_dir. Both paths are canonicalized internally.
-    static ConfigData
-    make_starter(const fs::path& root_path, const fs::path& config_dir, const string& jvm_target = "21") {
-        require(fs::is_directory(root_path), "root_path must be an existing directory: {}", root_path);
-        const auto abs_root = fs::weakly_canonical(root_path);
-        const auto abs_cfg = fs::weakly_canonical(config_dir);
-        const auto rel = "./" + abs_root.lexically_relative(abs_cfg).string();
-        return {
-            .version = 1,
-            .workspace_file = string{default_workspace_file},
-            .jvm_target = jvm_target,
-            .build = BuildConfig{.command = {string{default_gradle_command}}},
-            .roots = {{.path = rel}},
-        };
-    }
+    const ConfigData& data() const { return data_; }
 
     const fs::path& config_file() const { return config_file_; }
+
     const fs::path& config_dir() const { return config_dir_; }
-
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("Config: {}", config_file_.string()));
-        ctx.add(format("  {} root(s), jvm_target={}, workspace_file={}",
-            roots().size(),
-            jvm_target(),
-            data_.workspace_file.empty() ? "(not set)" : data_.workspace_file));
-        if (!ctx.verbose()) {
-            return;
-        }
-        if (data_.build) {
-            ctx.add(format("  build: {} {}", join(data_.build->command), join(data_.build->gradle_args)));
-        }
-        for (const auto& root : data_.roots) {
-            auto line = format("  root: {}", root_path(root).string());
-            if (root.build) {
-                line += format(" (build: {})", join(root.build->command));
-            }
-            ctx.add(std::move(line));
-        }
-    }
-
-    // --- Forwarded accessors ---
-    int version() const { return data_.version; }
-    const string& jvm_target() const { return data_.jvm_target; }
-    const optional<BuildConfig>& build() const { return data_.build; }
-    const vector<RootEntry>& roots() const { return data_.roots; }
-    const GenerationOptions& options() const { return data_.options; }
 
     /// Workspace output path resolved against config dir. Empty if not configured.
     fs::path workspace_file() const {
@@ -199,20 +229,14 @@ class Config {
     /// Root path resolved against config dir.
     fs::path root_path(const RootEntry& root) const { return resolve(root.path); }
 
-    /// Resolve the effective build config for a root.
-    /// Uses per-root build if present, otherwise falls back to the global build.
-    /// Throws if neither is configured.
-    const BuildConfig& build_for(const RootEntry& root) const {
-        if (root.build) {
-            return *root.build;
-        }
-        require(data_.build.has_value(), "no build command configured for root: {}", root.path);
-        return *data_.build;
-    }
+    string to_yaml() const { return data_.to_yaml(); }
 
-    /// Format compilerArguments for kotlin-lsp KotlinSettingsData.
-    /// J prefix is a kotlin-lsp convention: J-prefixed JSON string for compiler args.
-    string compiler_arguments_json() const { return format(R"(J{{"jvmTarget":"{}"}})", data_.jvm_target); }
+    void save_yaml_file(const fs::path& config_path) const { write_file(config_path, data_.to_yaml()); }
+
+    void describe(DescribeContext& ctx) const {
+        ctx.add(format("Config: {}", config_file_.string()));
+        data_.describe(ctx);
+    }
 
     /// Check resolved paths and build commands. Throws on first issue found.
     void validate() const {
@@ -226,7 +250,7 @@ class Config {
             require(fs::is_directory(resolved), "root path does not exist: {}", resolved);
         }
 
-        require(has_any_build_command(), "no build command configured (global or per-root)");
+        require(data_.has_any_build_command(), "no build command configured (global or per-root)");
     }
 
   private:
@@ -237,11 +261,6 @@ class Config {
     }
 
     fs::path resolve(const string& relative) const { return (config_dir_ / relative).lexically_normal(); }
-
-    [[nodiscard]] bool has_any_build_command() const {
-        return data_.build.has_value() ||
-               r::any_of(data_.roots, [](const auto& entry) { return entry.build.has_value(); });
-    }
 
     ConfigData data_;
     fs::path config_file_;

@@ -16,7 +16,7 @@ build:
 roots:
   - path: ./nonexistent_dir
 )");
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
     CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("does not exist"), std::runtime_error);
 }
 
@@ -32,7 +32,7 @@ roots:
         root_dir.path.string());
 
     const TempConfig tmp(yaml);
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
     CHECK_NOTHROW(cfg.validate());
 }
 
@@ -46,7 +46,7 @@ roots:
         root_dir.path.string());
 
     const TempConfig tmp(yaml);
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
     CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("no build command"), std::runtime_error);
 }
 
@@ -62,7 +62,7 @@ roots:
         root_dir.path.string());
 
     const TempConfig tmp(yaml);
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
     CHECK_NOTHROW(cfg.validate());
 }
 
@@ -79,6 +79,6 @@ roots:
         root_dir.path.string());
 
     const TempConfig tmp(yaml);
-    const auto cfg = klspw::Config::from_yaml(tmp.path);
+    const auto cfg = klspw::Config::load_yaml_file(tmp.path);
     CHECK_THROWS_WITH_AS(cfg.validate(), doctest::Contains("workspace_file"), std::runtime_error);
 }

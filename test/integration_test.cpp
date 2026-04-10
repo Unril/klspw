@@ -10,7 +10,7 @@ const fs::path fixtures = "test/fixtures/projects";
 /// Load config from a fixture project's klspw.yaml and build the workspace.
 klspw::WorkspaceData build_fixture(const std::string& project_name) {
     const auto config_path = fs::weakly_canonical(fixtures / project_name / "klspw.yaml");
-    auto cfg = klspw::Config::from_yaml(config_path);
+    auto cfg = klspw::Config::load_yaml_file(config_path);
 
     klspw::GradleRunner runner;
     const klspw::Pipeline pipeline(std::move(cfg), std::ref(runner));
@@ -137,17 +137,14 @@ TEST_CASE("integration: multi-root project merges two Gradle roots") {
 
 TEST_CASE("integration: write_workspace produces valid deserializable JSON") {
     const auto config_path = fs::weakly_canonical(fixtures / "with-deps" / "klspw.yaml");
-    auto cfg = klspw::Config::from_yaml(config_path);
+    auto cfg = klspw::Config::load_yaml_file(config_path);
     const auto ws_path = cfg.workspace_file();
 
     klspw::GradleRunner runner;
     const klspw::Pipeline pipeline(std::move(cfg), std::ref(runner));
     pipeline.write_workspace();
 
-    const auto json = klspw::read_file(ws_path);
-    klspw::WorkspaceData ws;
-    const auto ec = glz::read<klspw::ws_read_opts>(ws, json);
-    REQUIRE_MESSAGE(!ec, "Failed to parse workspace JSON");
+    const auto ws = klspw::WorkspaceData::load_json_file(ws_path);
 
     CHECK(ws.modules.size() == 1);
     CHECK(ws.modules[0].name == "with-deps");
