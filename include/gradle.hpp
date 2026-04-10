@@ -221,11 +221,9 @@ struct GradleBuildOutput {
         return static_cast<size_t>(r::count_if(projects, std::not_fn(&GradleProject::is_skipped)));
     }
 
-    strings describe() const {
-        DescribeContext ctx{false};
+    void describe(DescribeContext& ctx) const {
         ctx.add(format("{} project(s), {} active", projects.size(), active_project_count()));
         ctx.describe_each(projects);
-        return ctx.take_lines();
     }
 
     /// Convert all active projects into a merged WorkspaceData.

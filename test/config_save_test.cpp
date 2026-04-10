@@ -41,7 +41,6 @@ TEST_CASE("to_yaml preserves default options through round-trip") {
 
     CHECK(parsed.options.include_tests == true);
     CHECK(parsed.options.attach_sources == true);
-    CHECK(parsed.options.follow_symlinks == true);
 }
 
 TEST_CASE("to_yaml with per-root build overrides round-trips") {

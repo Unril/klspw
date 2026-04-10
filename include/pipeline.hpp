@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "config.hpp"
+#include "describe.hpp"
 #include "files.hpp"
 #include "gradle.hpp"
 #include "gradle_runner.hpp"
@@ -19,13 +20,6 @@ namespace klspw {
 /// Path markers that identify cache directories for compact library path display.
 inline constexpr std::array<string_view, 2> cache_path_markers = {"/caches/", "/packages/"};
 
-/// Log each line from a describe() result at the given level.
-inline void log_lines(spdlog::level::level_enum level, const strings& lines) {
-    for (const auto& line : lines) {
-        spdlog::log(level, "{}", line);
-    }
-}
-
 /// Orchestrates Gradle execution across config roots and produces WorkspaceData.
 class Pipeline {
   public:
@@ -34,7 +28,7 @@ class Pipeline {
     }
 
     /// Set where to save raw Gradle output for debugging.
-    void set_gradle_output_path(string path) { gradle_output_path_ = std::move(path); }
+    void set_gradle_output_path(fs::path path) { gradle_output_path_ = std::move(path); }
 
     /// Run Gradle on each root and merge results into a single WorkspaceData.
     [[nodiscard]] WorkspaceData build_workspace() const {
@@ -46,7 +40,9 @@ class Pipeline {
             ws.modules.size(),
             ws.libraries.size(),
             ws.kotlin_settings.size());
-        log_lines(spdlog::level::debug, ws.describe(true, cache_path_markers));
+        DescribeContext ctx{true, cache_path_markers};
+        ws.describe(ctx);
+        ctx.log(spdlog::level::debug);
         return ws;
     }
 
@@ -67,7 +63,9 @@ class Pipeline {
     /// Build workspace and log a full summary at info level (for inspect subcommand).
     void log_workspace() const {
         const auto ws = build_workspace();
-        log_lines(spdlog::level::info, ws.describe(true, cache_path_markers));
+        DescribeContext ctx{true, cache_path_markers};
+        ws.describe(ctx);
+        ctx.log(spdlog::level::info);
     }
 
   private:
@@ -86,7 +84,9 @@ class Pipeline {
         }
 
         const auto build_output = GradleBuildOutput::from_raw_output(raw_output);
-        log_lines(spdlog::level::info, build_output.describe());
+        DescribeContext build_ctx;
+        build_output.describe(build_ctx);
+        build_ctx.log(spdlog::level::info);
 
         WorkspaceData ws = build_output.to_workspace(cfg_.compiler_arguments_json(), cfg_.options());
         spdlog::info("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)",
@@ -98,17 +98,16 @@ class Pipeline {
 
     /// Save Gradle output to the configured path.
     void save_gradle_output(string_view raw_output) const {
-        const fs::path p{gradle_output_path_};
-        if (const auto parent = p.parent_path(); !parent.empty()) {
+        if (const auto parent = gradle_output_path_.parent_path(); !parent.empty()) {
             fs::create_directories(parent);
         }
-        write_file(p, raw_output);
-        spdlog::info("  Saved gradle output to {}", p.string());
+        write_file(gradle_output_path_, raw_output);
+        spdlog::info("  Saved gradle output to {}", gradle_output_path_.string());
     }
 
     Config cfg_;
     GradleBuildFn run_gradle_;
-    string gradle_output_path_;
+    fs::path gradle_output_path_;
 };
 
 } // namespace klspw

@@ -12,6 +12,7 @@
 
 #include "common.hpp"
 #include "describe.hpp"
+#include "ranges.hpp"
 
 namespace klspw {
 
@@ -151,7 +152,7 @@ struct LibraryRootData {
     string inclusion_options =
         "root_itself"; ///< "root_itself", "archives_under_root", "archives_under_root_recursively".
 
-    void describe(DescribeContext& ctx) const { ctx.add(format("    {}  [{}]", ctx.shorten_path(path), type)); }
+    void describe(DescribeContext& ctx) const { ctx.add(format("    {}  [{}]", ctx.format_path(path), type)); }
 };
 
 /// An external library (jar dependency).
@@ -268,34 +269,17 @@ struct WorkspaceData {
         kotlin_settings.append_range(std::move(other.kotlin_settings));
         java_settings.append_range(std::move(other.java_settings));
         sdks.append_range(std::move(other.sdks));
-
-        string_set existing_names;
-        existing_names.reserve(libraries.size());
-        for (const auto& lib : libraries) {
-            existing_names.insert(lib.name);
-        }
-        for (auto& lib : other.libraries) {
-            if (existing_names.insert(lib.name).second) {
-                libraries.push_back(std::move(lib));
-            }
-        }
+        libraries.append_range(std::move(other.libraries));
+        libraries = std::move(libraries) | unique_by(&LibraryData::name);
     }
 
-    /// Build a human-readable description of the workspace.
-    strings describe(bool verbose = true, string_views path_markers = {}) const {
-        DescribeContext ctx{verbose, path_markers};
+    void describe(DescribeContext& ctx) const {
+        ctx.describe_section(format("Modules ({}):", modules.size()), modules);
 
-        ctx.add(format("Modules ({}):", modules.size()));
-        ctx.describe_each(modules);
-
-        ctx.add(format("Libraries ({}):", libraries.size()));
-        ctx.describe_each(libraries);
+        ctx.describe_section(format("Libraries ({}):", libraries.size()), libraries);
         ctx.flush_stripped_prefixes();
 
-        ctx.add(format("Kotlin settings ({}):", kotlin_settings.size()));
-        ctx.describe_each(kotlin_settings);
-
-        return ctx.take_lines();
+        ctx.describe_section(format("Kotlin settings ({}):", kotlin_settings.size()), kotlin_settings);
     }
 };
 

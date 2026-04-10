@@ -58,7 +58,6 @@ roots:
 options:
   include_tests: true
   attach_sources: true
-  follow_symlinks: true
 ```
 
 - `build` sets the default Gradle command for all roots

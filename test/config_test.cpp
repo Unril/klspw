@@ -30,7 +30,6 @@ TEST_CASE("parses example config file") {
     SUBCASE("options") {
         CHECK(cfg.options().include_tests == false);
         CHECK(cfg.options().attach_sources == true);
-        CHECK(cfg.options().follow_symlinks == true);
     }
 }
 
@@ -59,7 +58,6 @@ roots:
     CHECK(cfg.jvm_target() == "21");
     CHECK(cfg.options().include_tests == true);
     CHECK(cfg.options().attach_sources == true);
-    CHECK(cfg.options().follow_symlinks == true);
     CHECK_FALSE(cfg.build().has_value());
 }
 

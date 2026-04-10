@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <sstream>
 #include <thread>
 
 #include <spdlog/spdlog.h>
@@ -14,7 +13,7 @@
 namespace klspw {
 
 /// Signature for running a Gradle build: (BuildConfig, root_path) -> stdout.
-/// TODO: switch to std::move_only_function when libc++ ships it.
+/// std::move_only_function would be a better fit (move-only captures), but Apple libc++ lacks it.
 using GradleBuildFn = std::function<string(const BuildConfig&, const fs::path&)>;
 
 /// Manages the Gradle init script lifecycle and process execution.
@@ -79,9 +78,8 @@ class GradleRunner {
 
     static fs::path write_init_script(const fs::path& dir) {
         fs::create_directories(dir);
-        std::ostringstream oss;
-        oss << std::this_thread::get_id();
-        const auto path = dir / format("init.{}.gradle.kts", oss.str());
+        const auto tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
+        const auto path = dir / format("init.{}.gradle.kts", tid);
         write_file(path, init_script_content);
         return path;
     }

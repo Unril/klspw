@@ -40,7 +40,6 @@ inline constexpr string_view gradle_task = "dumpKotlinLspModel";
 struct GenerationOptions {
     bool include_tests = true; ///< Include test source sets in the workspace.
     bool attach_sources = true; ///< Discover and attach source jars (-sources.jar) to libraries.
-    bool follow_symlinks = true; ///< Follow symlinks when resolving paths (not yet implemented).
 };
 
 /// Gradle build command and extra arguments.
@@ -129,9 +128,9 @@ class Config {
         spdlog::info("Loading config: {}", resolved.string());
         auto data = ConfigData::from_yaml(read_file(resolved));
         auto cfg = Config{std::move(data), resolved};
-        for (const auto& line : cfg.describe()) {
-            spdlog::info("{}", line);
-        }
+        DescribeContext ctx;
+        cfg.describe(ctx);
+        ctx.log(spdlog::level::info);
         return cfg;
     }
 
@@ -161,16 +160,14 @@ class Config {
     const fs::path& config_file() const { return config_file_; }
     const fs::path& config_dir() const { return config_dir_; }
 
-    /// Build a human-readable summary of the config for logging.
-    strings describe(bool verbose = true) const {
-        DescribeContext ctx{verbose};
+    void describe(DescribeContext& ctx) const {
         ctx.add(format("Config: {}", config_file_.string()));
         ctx.add(format("  {} root(s), jvm_target={}, workspace_file={}",
             roots().size(),
             jvm_target(),
             data_.workspace_file.empty() ? "(not set)" : data_.workspace_file));
         if (!ctx.verbose()) {
-            return ctx.take_lines();
+            return;
         }
         if (data_.build) {
             ctx.add(format("  build: {} {}", join(data_.build->command), join(data_.build->gradle_args)));
@@ -182,7 +179,6 @@ class Config {
             }
             ctx.add(std::move(line));
         }
-        return ctx.take_lines();
     }
 
     // --- Forwarded accessors ---

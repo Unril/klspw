@@ -4,7 +4,9 @@
 ///
 /// DescribeContext accumulates output lines, controls verbosity, and manages
 /// path shortening for cache jar display. Model types call describe(ctx) to
-/// append their representation. The caller retrieves lines via take_lines().
+/// append their representation. The caller retrieves lines via lines().
+
+#include <spdlog/spdlog.h>
 
 #include "common.hpp"
 #include "strings.hpp"
@@ -29,9 +31,9 @@ class DescribeContext {
     /// Whether verbose detail should be included.
     bool verbose() const { return verbose_; }
 
-    /// Shorten a path using configured markers. Records the stripped prefix.
-    /// Returns the display string (shortened if a marker matched, original otherwise).
-    string shorten_path(string_view path) {
+    /// Format a path for display, shortening cache paths using configured markers.
+    /// Records stripped prefixes for later summary via flush_stripped_prefixes().
+    string format_path(string_view path) {
         auto [display, stripped] = strip_prefixes(path, path_markers_);
         if (!stripped.empty()) {
             stripped_prefixes_.emplace(stripped);
@@ -49,6 +51,17 @@ class DescribeContext {
         }
     }
 
+    /// Add a section header and describe each element in the range.
+    template <r::input_range R>
+        requires Describable<r::range_value_t<R>>
+    void describe_section(string header, const R& range) {
+        add(std::move(header));
+        describe_each(range);
+    }
+
+    /// Describe a single Describable element.
+    template <Describable T> void describe_one(const T& item) { item.describe(*this); }
+
     /// Flush accumulated cache prefix summary lines.
     void flush_stripped_prefixes() {
         for (const auto& prefix : stripped_prefixes_) {
@@ -56,8 +69,21 @@ class DescribeContext {
         }
     }
 
-    /// Move accumulated lines out. Context is empty after this call.
-    strings take_lines() { return std::move(lines_); }
+    /// Log all accumulated lines at the given level.
+    void log(spdlog::level::level_enum level) const {
+        for (const auto& line : lines_) {
+            spdlog::log(level, "{}", line);
+        }
+    }
+
+    /// Read accumulated lines.
+    const strings& lines() const { return lines_; }
+
+    /// Discard all accumulated lines and stripped prefixes.
+    void clear() {
+        lines_.clear();
+        stripped_prefixes_.clear();
+    }
 
   private:
     strings lines_;

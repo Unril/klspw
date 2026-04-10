@@ -28,4 +28,4 @@ The config file (`workspace-kotlin-lsp-config.yaml`) defines:
 - Gradle root project paths (resolved relative to config file directory)
 - Output workspace file path
 - JVM target version
-- Options: `include_tests`, `attach_sources`, `follow_symlinks`
+- Options: `include_tests`, `attach_sources`

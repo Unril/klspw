@@ -14,4 +14,3 @@ roots:
 options:
   include_tests: false
   attach_sources: true
-  follow_symlinks: true
