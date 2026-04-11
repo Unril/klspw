@@ -66,13 +66,14 @@ roots:
 options:
   include_tests: true
   attach_sources: true
+  remove_missing_paths: true
 ```
 
 - `build` sets the default Gradle command for all roots
 - Each root can override `build` with its own `command` and `gradle_args`
 - Paths resolve relative to the config file directory
-- `include_tests` controls whether test source sets appear in the workspace
-- `attach_sources` discovers and attaches source jars to libraries (Gradle-resolved source jars and package cache layouts)
+- `include_tests` controls whether test source sets appear in the workspace (default: true)
+- `attach_sources` discovers and attaches source jars to libraries via Gradle-resolved mappings and package cache layouts (default: true)
 - `remove_missing_paths` warns and removes source roots and classpath jars that don't exist on disk (default: true)
 
 ## How it works
@@ -86,6 +87,42 @@ options:
 7. Merge results across roots, deduplicating libraries by name
 8. Promote library dependencies to module dependencies when a library matches a workspace module (sibling Gradle root)
 9. Write deterministic, pretty-printed `workspace.json`
+
+## VS Code setup with kotlin-lsp
+
+[kotlin-lsp] provides Kotlin language support for VS Code (completion, diagnostics, navigation, refactoring). It normally imports Gradle projects automatically, but that fails when the build runs through a wrapper or dependencies come from non-standard locations. klspw bridges this gap by generating a `workspace.json` that kotlin-lsp can import directly.
+
+Prerequisites: Java 17+ on PATH.
+
+1. Install kotlin-lsp (the language server):
+
+   ```bash
+   brew install JetBrains/utils/kotlin-lsp
+   ```
+
+2. Install the VS Code extension: download the latest `.vsix` from the [kotlin-lsp releases page](https://github.com/Kotlin/kotlin-lsp/releases), then install it via Extensions > `...` > Install from VSIX.
+
+3. Create a klspw config in your Kotlin project root:
+
+   ```bash
+   klspw -c . init ./my-project
+   ```
+
+   Edit `klspw.yaml` if needed (build command, extra roots, options).
+
+4. Generate the workspace:
+
+   ```bash
+   klspw generate
+   ```
+
+   This writes `workspace.json` next to `klspw.yaml`.
+
+5. Open the project folder in VS Code. kotlin-lsp detects `workspace.json` and uses it for project import instead of running Gradle itself.
+
+6. If you change dependencies or project structure, re-run `klspw generate` and restart the language server with the `Kotlin LSP: Restart` command from the command palette.
+
+To verify the import worked, check the kotlin-lsp output panel in VS Code for messages about loaded modules and libraries.
 
 ## Project structure
 
@@ -158,22 +195,32 @@ All managed via vcpkg manifest mode.
 
 ## CI
 
-GitHub Actions runs on every push to `master` and on pull requests, building and testing on macOS arm64 and Intel (both macOS 26 with Xcode 26.4). Pushing a `v*` tag also creates a GitHub Release automatically.
+Two GitHub Actions workflows automate building, testing, and releasing:
+
+`ci.yml` runs on every push to `master` and on pull requests. It builds and tests on macOS 26 arm64 and Intel, both using Xcode 26.4. The workflow uses the `release` CMake preset with vcpkg for dependency management. Cached vcpkg binaries speed up repeat runs. After building, it installs into a staging directory and runs a smoke test (`--version` + `init` on a fixture project).
+
+`release.yml` triggers when a `v*` tag is pushed. It creates a GitHub Release with auto-generated notes from the commit history. The release provides a stable source tarball URL for the Homebrew formula.
+
+Homebrew bottles (prebuilt binaries) are built separately by the [homebrew-tap] repo's own CI workflows using `brew test-bot`.
 
 ## Publishing a release
 
 1. Update the version in `CMakeLists.txt` (`project(klspw VERSION x.y.z ...)`) and `vcpkg.json`.
 2. Commit, tag, and push:
+
    ```bash
    git tag v0.2.0
    git push origin v0.2.0
    ```
+
 3. CI builds and tests both architectures. The release workflow creates a GitHub Release with auto-generated notes.
 4. Get the tarball sha256:
+
    ```bash
    curl -sL https://github.com/Unril/klspw/archive/refs/tags/v0.2.0.tar.gz | shasum -a 256
    ```
-5. In the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo, update `Formula/klspw.rb` with the new `url`, `sha256`, and version. Commit and push.
+
+5. In the [homebrew-tap] repo, update `Formula/klspw.rb` with the new `url`, `sha256`, and version. Open a PR, let the tap CI build bottles, then label the PR `pr-pull` to publish them.
 
 Users upgrade with `brew upgrade klspw`.
 
@@ -182,3 +229,4 @@ Users upgrade with `brew upgrade klspw`.
 [MIT](LICENSE)
 
 [kotlin-lsp]: https://github.com/Kotlin/kotlin-lsp
+[homebrew-tap]: https://github.com/Unril/homebrew-tap

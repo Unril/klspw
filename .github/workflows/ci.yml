@@ -33,8 +33,6 @@ jobs:
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
-      # Optional but recommended for reproducibility:
-      # VCPKG_COMMIT: 0123456789abcdef0123456789abcdef01234567
 
     steps:
       - name: Checkout
@@ -54,7 +52,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json',
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json',
             '**/CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-
@@ -62,8 +60,6 @@ jobs:
       - name: Acquire vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          # Optional but recommended:
-          # git -C "$VCPKG_ROOT" checkout "$VCPKG_COMMIT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Configure
