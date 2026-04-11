@@ -22,7 +22,9 @@ just install                      # release build + install to /usr/local
 ```bash
 # Generate a starter config for a Gradle root
 klspw init ./my-project
-klspw init ./my-project -c config.yaml  # write to file instead of stdout
+klspw -c . init ./my-project              # write to ./klspw.yaml
+klspw -c . init "./proj gradlew"          # custom build command
+klspw -c . init ./proj_1 ./proj_2 -b cmd  # multiple roots, global build
 
 # Run Gradle and write workspace.json (uses ./klspw.yaml by default)
 klspw generate
@@ -71,6 +73,7 @@ options:
 - Paths resolve relative to the config file directory
 - `include_tests` controls whether test source sets appear in the workspace
 - `attach_sources` discovers and attaches source jars to libraries (Gradle-resolved source jars and package cache layouts)
+- `remove_missing_paths` warns and removes source roots and classpath jars that don't exist on disk (default: true)
 
 ## How it works
 
@@ -81,17 +84,18 @@ options:
 5. Attach source jars to libraries (from Gradle resolution, then filesystem discovery as fallback)
 6. Convert to kotlin-lsp workspace model (modules, libraries, kotlin settings)
 7. Merge results across roots, deduplicating libraries by name
-8. Write deterministic, pretty-printed `workspace.json`
+8. Promote library dependencies to module dependencies when a library matches a workspace module (sibling Gradle root)
+9. Write deterministic, pretty-printed `workspace.json`
 
 ## Project structure
 
 ```text
 include/
   common.hpp            # type aliases, namespace imports, glaze opts, require()
-  strings.hpp           # string utilities: trim, join, strip_prefixes, extract_between
+  strings.hpp           # string utilities: trim, join, split_words, strip_prefixes, extract_between
   files.hpp             # file I/O: read_file, write_file, find_dir, find_file, file_stem
   ranges.hpp            # range adaptors: to_vector, unique_by, not_in
-  describe.hpp          # DescribeContext for human-readable model descriptions
+  describe.hpp          # d_info/d_debug/d_trace logging + Describable concept
   validate.hpp          # ValidateContext for collecting validation errors
   config.hpp            # config model + YAML loading via glaze
   gradle_runner.hpp     # GradleRunner: init script lifecycle
@@ -128,6 +132,7 @@ just build       # cmake --build --preset dev
 just test        # ctest --preset dev
 just check       # all three
 just release     # configure + build + test with release preset
+just sanitize    # ASan + UBSan build and test
 just install     # release build + install to /usr/local
 just install /opt/klspw  # install to custom prefix
 
@@ -153,7 +158,7 @@ All managed via vcpkg manifest mode.
 
 ## CI
 
-GitHub Actions runs on every push to `main` and on pull requests, building and testing on macOS arm64 and Intel. Pushing a `v*` tag also creates a GitHub Release automatically.
+GitHub Actions runs on every push to `master` and on pull requests, building and testing on macOS arm64 and Intel (both macOS 26 with Xcode 26.4). Pushing a `v*` tag also creates a GitHub Release automatically.
 
 ## Publishing a release
 

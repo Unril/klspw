@@ -11,15 +11,17 @@ It targets repositories where the default kotlin-lsp project import fails -- whe
 3. Parses source sets, classpaths, and project structure from the Gradle output
 4. Converts to the kotlin-lsp workspace model (modules, libraries, kotlin settings)
 5. Merges results across roots, deduplicates libraries by name
-6. Writes deterministic, pretty-printed `workspace.json`
+6. Promotes library dependencies to module dependencies when a library matches a workspace module
+7. Writes deterministic, pretty-printed `workspace.json`
 
 ## CLI subcommands
 
-- `klspw init {root}` -- generate a starter config YAML for a Gradle root
+- `klspw init {roots...}` -- generate a starter config YAML; each arg is `"path [build_command...]"`
 - `klspw generate` -- run Gradle, write `workspace.json` (uses `./klspw.yaml` by default)
 - `klspw inspect` -- run Gradle, log discovered modules/libraries
 - `klspw validate` -- check config paths and build commands
 - `-c` flag overrides the config path (file or directory)
+- `-b` flag sets the global build command (init only)
 
 ## Config file
 
@@ -29,4 +31,4 @@ The config file (default name: `klspw.yaml`) defines:
 - Gradle root project paths (resolved relative to config file directory)
 - Output workspace file path
 - JVM target version
-- Options: `include_tests`, `attach_sources`
+- Options: `include_tests`, `attach_sources`, `remove_missing_paths`

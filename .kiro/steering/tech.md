@@ -12,7 +12,8 @@
 - Ninja generator
 - vcpkg manifest mode for dependency management (`vcpkg.json`)
 - `just` task runner wrapping CMake commands (`justfile`)
-- Presets: `dev` (Debug), `release` (Release), `coverage` (Debug + clang coverage)
+- Presets: `dev` (Debug), `release` (Release), `sanitize` (Debug + ASan/UBSan), `coverage` (Debug + clang coverage)
+- ccache enabled automatically when available
 
 ## Dependencies
 
@@ -51,7 +52,10 @@ just run -c config.yaml generate
 just rebuild        # clean + configure + build
 
 # Release build
-just build preset=release
+just release        # configure + build + test with release preset
+
+# Sanitizer build (ASan + UBSan, separate build dir)
+just sanitize
 
 # Coverage
 just coverage       # build + run + merge + report + html
