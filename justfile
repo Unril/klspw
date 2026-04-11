@@ -22,6 +22,10 @@ run *args: build
 release:
     just preset=release configure build test
 
+# ASan + UBSan build and test (separate build dir).
+sanitize:
+    just preset=sanitize configure build test
+
 install prefix="/usr/local":
     just release
     cmake --install build/release --prefix {{ prefix }}

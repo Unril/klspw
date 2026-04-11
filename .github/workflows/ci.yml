@@ -2,25 +2,37 @@ name: ci
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
+    branches: [ master ]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   build-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, macos-15-intel]
-
-    runs-on: ${{ matrix.os }}
+        include:
+          - name: macOS 15 arm64
+            os: macos-15
+          - name: macOS 15 Intel
+            os: macos-15-intel
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+      # Optional but recommended for reproducibility:
+      # VCPKG_COMMIT: 0123456789abcdef0123456789abcdef01234567
 
     steps:
       - name: Checkout
@@ -33,26 +45,31 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json', 'CMakeLists.txt', 'CMakePresets.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json',
+            '**/CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-
 
       - name: Acquire vcpkg
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          # Optional but recommended:
+          # git -C "$VCPKG_ROOT" checkout "$VCPKG_COMMIT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Configure
         run: cmake --preset release
 
       - name: Build
-        run: cmake --build --preset release
+        run: cmake --build --preset release --parallel
 
       - name: Test
-        run: ctest --preset release
+        run: ctest --preset release --output-on-failure
 
       - name: Install into staging
-        run: cmake --install build/release --prefix "$PWD/stage"
+        run: |
+          rm -rf "$PWD/stage"
+          cmake --install build/release --prefix "$PWD/stage"
 
       - name: Smoke test
         run: |

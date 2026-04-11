@@ -7,13 +7,15 @@
 
 namespace {
 
-template <typename T> std::string to_json(const T& val) {
+template <typename T>
+std::string to_json(const T& val) {
     auto result = glz::write_json(val);
     REQUIRE(result.has_value());
     return result.value();
 }
 
-template <typename T> T from_json(const std::string& json_str) {
+template <typename T>
+T from_json(const std::string& json_str) {
     auto result = glz::read_json<T>(json_str);
     REQUIRE(result.has_value());
     return result.value();
@@ -213,3 +215,129 @@ TEST_CASE("LibraryData with properties round-trips") {
     CHECK(parsed.excluded_roots[0] == "/excluded");
     CHECK(parsed.properties->tag == "properties");
 }
+
+// --- promote_module_deps ---
+
+TEST_CASE("promote_module_deps converts library dep to module dep") {
+    klspw::WorkspaceData ws;
+    ws.modules.push_back({.name = "CoreLib"});
+    ws.modules.push_back({.name = "App1",
+        .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .scope = klspw::DependencyScope::compile}}});
+    ws.modules.push_back({.name = "App2",
+        .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .scope = klspw::DependencyScope::test}}});
+    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib/CoreLib-1.0.jar"}}});
+
+    ws.promote_module_deps();
+
+    // Library dep promoted to module dep in both consuming modules.
+    const auto& dep1 = ws.modules[1].dependencies[0];
+    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep1));
+    CHECK(std::get<klspw::ModuleDep>(dep1).name == "CoreLib");
+    CHECK(std::get<klspw::ModuleDep>(dep1).scope == klspw::DependencyScope::compile);
+
+    const auto& dep2 = ws.modules[2].dependencies[0];
+    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep2));
+    CHECK(std::get<klspw::ModuleDep>(dep2).name == "CoreLib");
+    CHECK(std::get<klspw::ModuleDep>(dep2).scope == klspw::DependencyScope::test);
+
+    // Library removed.
+    CHECK(ws.libraries.empty());
+}
+
+TEST_CASE("promote_module_deps leaves unrelated libraries untouched") {
+    klspw::WorkspaceData ws;
+    ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "guava-33.0"}}});
+    ws.libraries.push_back({.name = "guava-33.0", .roots = {{.path = "/lib/guava-33.0.jar"}}});
+
+    ws.promote_module_deps();
+
+    REQUIRE(std::holds_alternative<klspw::LibraryDep>(ws.modules[0].dependencies[0]));
+    CHECK(ws.libraries.size() == 1);
+}
+
+TEST_CASE("promote_module_deps preserves non-library deps") {
+    klspw::WorkspaceData ws;
+    ws.modules.push_back({.name = "CoreLib"});
+    ws.modules.push_back({.name = "App",
+        .dependencies = {
+            klspw::InheritedSdk{},
+            klspw::ModuleSource{},
+            klspw::LibraryDep{.name = "CoreLib-1.0"},
+        }});
+    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib/CoreLib-1.0.jar"}}});
+
+    ws.promote_module_deps();
+
+    CHECK(std::holds_alternative<klspw::InheritedSdk>(ws.modules[1].dependencies[0]));
+    CHECK(std::holds_alternative<klspw::ModuleSource>(ws.modules[1].dependencies[1]));
+    CHECK(std::holds_alternative<klspw::ModuleDep>(ws.modules[1].dependencies[2]));
+}
+
+TEST_CASE("promote_module_deps handles multi-dash module names") {
+    klspw::WorkspaceData ws;
+    ws.modules.push_back({.name = "My-Cool-Lib"});
+    ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "My-Cool-Lib-2.3.1"}}});
+    ws.libraries.push_back({.name = "My-Cool-Lib-2.3.1", .roots = {{.path = "/lib.jar"}}});
+
+    ws.promote_module_deps();
+
+    const auto& dep = ws.modules[1].dependencies[0];
+    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
+    CHECK(std::get<klspw::ModuleDep>(dep).name == "My-Cool-Lib");
+    CHECK(ws.libraries.empty());
+}
+
+TEST_CASE("promote_module_deps no-op when no modules") {
+    klspw::WorkspaceData ws;
+    ws.libraries.push_back({.name = "foo-1.0", .roots = {{.path = "/foo.jar"}}});
+
+    ws.promote_module_deps();
+
+    CHECK(ws.libraries.size() == 1);
+}
+
+TEST_CASE("promote_module_deps skips self-dependency") {
+    klspw::WorkspaceData ws;
+    ws.modules.push_back({.name = "CoreLib", .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0"}}});
+    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib.jar"}}});
+
+    ws.promote_module_deps();
+
+    // Should remain a library dep, not promote to self-referencing module dep.
+    CHECK(std::holds_alternative<klspw::LibraryDep>(ws.modules[0].dependencies[0]));
+}
+
+TEST_CASE("promote_module_deps preserves isExported") {
+    klspw::WorkspaceData ws;
+    ws.modules.push_back({.name = "CoreLib"});
+    ws.modules.push_back(
+        {.name = "App", .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .isExported = true}}});
+    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib.jar"}}});
+
+    ws.promote_module_deps();
+
+    const auto& dep = ws.modules[1].dependencies[0];
+    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
+    CHECK(std::get<klspw::ModuleDep>(dep).isExported);
+}
+
+// --- module_names ---
+
+TEST_CASE("module_names returns set of module names") {
+    klspw::WorkspaceData ws;
+    ws.modules.push_back({.name = "App"});
+    ws.modules.push_back({.name = "CoreLib"});
+
+    const auto names = ws.module_names();
+
+    CHECK(names.size() == 2);
+    CHECK(names.contains("App"));
+    CHECK(names.contains("CoreLib"));
+}
+
+TEST_CASE("module_names empty when no modules") {
+    const klspw::WorkspaceData ws;
+    CHECK(ws.module_names().empty());
+}
+
+// (remove_missing_jars tests moved to gradle_test.cpp — operates on SourceSet now)

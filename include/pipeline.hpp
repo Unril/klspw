@@ -8,7 +8,6 @@
 #include <spdlog/spdlog.h>
 
 #include "config.hpp"
-#include "describe.hpp"
 #include "files.hpp"
 #include "gradle.hpp"
 #include "gradle_runner.hpp"
@@ -16,9 +15,6 @@
 #include "workspace.hpp"
 
 namespace klspw {
-
-/// Path markers that identify cache directories for compact library path display.
-inline constexpr std::array<string_view, 2> cache_path_markers = {"/caches/", "/packages/"};
 
 /// Orchestrates Gradle execution across config roots and produces WorkspaceData.
 class Pipeline {
@@ -31,15 +27,16 @@ class Pipeline {
     void set_gradle_output_path(fs::path path) { gradle_output_path_ = std::move(path); }
 
     /// Run Gradle on each root and merge results into a single WorkspaceData.
-    [[nodiscard]] WorkspaceData build_workspace() const {
+    WorkspaceData build_workspace() const {
         WorkspaceData ws;
         for (const auto& root : cfg_.data().roots) {
             ws.merge(build_root_workspace(root));
         }
-        spdlog::info("Pipeline complete: {} module(s), {} library(ies), {} kotlin setting(s)",
-            ws.modules.size(),
-            ws.libraries.size(),
-            ws.kotlin_settings.size());
+        const auto promoted = ws.promote_module_deps();
+        if (promoted > 0) {
+            d_info("  promoted {} library deps to module deps ({} libraries remaining)", promoted, ws.libraries.size());
+        }
+        ws.describe();
         return ws;
     }
 
@@ -49,42 +46,31 @@ class Pipeline {
         require(!ws_path.empty(), "workspace_file not configured in config");
 
         build_workspace().save_json_file(ws_path);
-        spdlog::info("Wrote {}", ws_path.string());
+        d_info("Wrote {}", ws_path);
     }
 
-    /// Build workspace and log a full summary at info level (for inspect subcommand).
-    void log_workspace() const {
-        DescribeContext ctx{true, cache_path_markers};
-        build_workspace().describe(ctx);
-        ctx.log(spdlog::level::info);
-    }
+    /// Build workspace and log a full summary (for inspect subcommand).
+    void log_workspace() const { build_workspace(); }
 
   private:
     WorkspaceData build_root_workspace(const RootEntry& root) const {
         const auto build = cfg_.data().build_for(root);
         const auto root_path = cfg_.root_path(root);
-        spdlog::info("Processing root: {}", root_path.string());
-        spdlog::info("  build command: {}", join(build.command));
-        spdlog::info("  gradle args: {}", build.has_args() ? join(build.gradle_args) : "(none)");
+        d_info("Processing root: {}", root_path.string());
+        d_info("  build command: {}", join(build.command));
+        d_info("  gradle args: {}", build.has_args() ? join(build.gradle_args) : "(none)");
 
         const auto raw_output = run_gradle_(build, root_path);
-        spdlog::info("  Gradle output: {} bytes", raw_output.size());
+        d_info("  Gradle output: {} bytes", raw_output.size());
 
         if (!gradle_output_path_.empty()) {
             save_gradle_output(raw_output);
         }
 
         const auto build_output = GradleBuildOutput::from_raw_output(raw_output);
-        DescribeContext build_ctx;
-        build_output.describe(build_ctx);
-        build_ctx.log(spdlog::level::info);
+        build_output.describe();
 
-        WorkspaceData ws = build_output.to_workspace(cfg_.data().compiler_arguments_json(), cfg_.data().options);
-        spdlog::info("  workspace: {} module(s), {} library(ies), {} kotlin setting(s)",
-            ws.modules.size(),
-            ws.libraries.size(),
-            ws.kotlin_settings.size());
-        return ws;
+        return build_output.to_workspace(cfg_.data().compiler_arguments_json(), cfg_.data().options);
     }
 
     /// Save Gradle output to the configured path.
@@ -93,7 +79,7 @@ class Pipeline {
             fs::create_directories(parent);
         }
         write_file(gradle_output_path_, raw_output);
-        spdlog::info("  Saved gradle output to {}", gradle_output_path_.string());
+        d_info("  Saved gradle output to {}", gradle_output_path_.string());
     }
 
     Config cfg_;

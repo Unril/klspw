@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "common.hpp"
+#include "describe.hpp"
 #include "strings.hpp"
 
 namespace klspw {
@@ -30,7 +31,7 @@ class ProcessRunner {
         }
 
         const auto cmd = join(args_);
-        spdlog::debug("exec: {} (cwd: {})", cmd, cwd_.empty() ? "." : cwd_str);
+        d_debug("exec: {} (cwd: {})", cmd, cwd_.empty() ? "." : cwd_str);
 
         const auto start_ec = proc.start(args_, opts);
         require(!start_ec, "Failed to start process: {}\n  Command: {}", start_ec, cmd);
@@ -43,7 +44,7 @@ class ProcessRunner {
         const auto [status, wait_ec] = proc.wait(reproc::infinite);
         require(!wait_ec, "Failed waiting for process: {}\n  Command: {}", wait_ec, cmd);
 
-        spdlog::debug("exec done: exit={}, stdout={} bytes", status, stdout_output.size());
+        d_debug("exec done: exit={}, stdout={} bytes", status, stdout_output.size());
         require(status == 0,
             "Process exited with code {}\n  Command: {}\n  Output: {:.500}",
             status,

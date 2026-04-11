@@ -41,6 +41,7 @@ inline constexpr string_view gradle_task = "dumpKotlinLspModel";
 struct GenerationOptions {
     bool include_tests = true; ///< Include test source sets in the workspace.
     bool attach_sources = true; ///< Discover and attach source jars (-sources.jar) to libraries.
+    bool remove_missing_paths = true; ///< Warn and remove paths that don't exist on disk.
 };
 
 /// Gradle build command and extra arguments.
@@ -71,7 +72,7 @@ struct BuildConfig {
         ctx.check(has_commands(), "BuildConfig missing required field: command");
     }
 
-    void describe(DescribeContext& ctx) const { ctx.add(format("  build: {} {}", join(command), join(gradle_args))); }
+    void describe() const { d_debug("  build: {} {}", join(command), join(gradle_args)); }
 };
 
 /// A project root to process. Optionally overrides the global build config.
@@ -86,12 +87,12 @@ struct RootEntry {
         ctx.validate(build);
     }
 
-    void describe(DescribeContext& ctx) const {
-        auto line = format("  root: {}", path);
+    void describe() const {
         if (has_build()) {
-            line += format(" (build: {})", join(build->command));
+            d_debug("  root: {} (build: {})", path, join(build->command));
+        } else {
+            d_debug("  root: {}", path);
         }
-        ctx.add(std::move(line));
     }
 };
 
@@ -103,6 +104,15 @@ struct ConfigData {
     optional<BuildConfig> build; ///< Global build command and Gradle args. Optional.
     vector<RootEntry> roots; ///< Gradle root projects to process (at least one required).
     GenerationOptions options; ///< Behavioral flags for workspace generation.
+
+    void describe() const {
+        d_info("  {} root(s), jvm_target={}, workspace_file={}",
+            roots.size(),
+            jvm_target,
+            has_workspace_file() ? workspace_file : "(not set)");
+        d_describe(build);
+        d_describe(roots);
+    }
 
     bool has_workspace_file() const { return !workspace_file.empty(); }
 
@@ -133,17 +143,6 @@ struct ConfigData {
     bool has_build() const { return build.has_value(); }
 
     bool has_any_build_command() const { return has_build() || r::any_of(roots, &RootEntry::has_build); }
-
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("  {} root(s), jvm_target={}, workspace_file={}",
-            roots.size(),
-            jvm_target,
-            has_workspace_file() ? workspace_file : "(not set)"));
-        if (ctx.verbose()) {
-            ctx.describe(build);
-            ctx.describe(roots);
-        }
-    }
 
     /// Format compilerArguments for kotlin-lsp KotlinSettingsData.
     /// J prefix is a kotlin-lsp convention: J-prefixed JSON string for compiler args.
@@ -230,7 +229,7 @@ class StarterConfig {
         require(!config_path_.empty(), "no config path specified (use to_yaml() for stdout)");
         const auto resolved = resolve_config_path(config_path_);
         write_file(resolved, to_yaml());
-        spdlog::info("Wrote config to {}", resolved.string());
+        d_info("Wrote config to {}", resolved.string());
     }
 
   private:
@@ -290,9 +289,7 @@ class Config {
         require(fs::exists(resolved), "Config file not found: {}", resolved);
         auto data = ConfigData::from_yaml(read_file(resolved));
         auto cfg = Config{std::move(data), resolved};
-        DescribeContext ctx;
-        cfg.describe(ctx);
-        ctx.log(spdlog::level::info);
+        cfg.describe();
         return cfg;
     }
 
@@ -313,11 +310,6 @@ class Config {
     /// Root path resolved against config dir.
     fs::path root_path(const RootEntry& root) const { return resolve(root.path); }
 
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("Config: {}", config_file_.string()));
-        data_.describe(ctx);
-    }
-
     /// Validate config data, resolved paths, and build commands.
     void validate(ValidateContext& ctx) const {
         data_.validate(ctx);
@@ -332,6 +324,11 @@ class Config {
             const auto resolved = root_path(root);
             ctx.check(fs::is_directory(resolved), format("root path does not exist: {}", resolved.string()));
         }
+    }
+
+    void describe() const {
+        d_info("Config: {}", config_file_);
+        data_.describe();
     }
 
   private:

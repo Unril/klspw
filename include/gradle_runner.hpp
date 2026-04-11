@@ -30,7 +30,7 @@ class GradleRunner {
 
     /// Explicit temp directory (for testing).
     explicit GradleRunner(const fs::path& temp_dir) : init_script_path_{write_init_script(temp_dir)} {
-        spdlog::debug("GradleRunner: init script at {}", init_script_path_.string());
+        d_debug("GradleRunner: init script at {}", init_script_path_.string());
     }
 
     ~GradleRunner() noexcept { close(); }

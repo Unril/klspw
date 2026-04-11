@@ -44,10 +44,14 @@ class ValidateContext {
     }
 
     /// Validate a single Validatable element.
-    template <Validatable T> void validate(const T& item) { item.validate(*this); }
+    template <Validatable T>
+    void validate(const T& item) {
+        item.validate(*this);
+    }
 
     /// Validate an optional element. No-op if empty.
-    template <Validatable T> void validate(const optional<T>& item) {
+    template <Validatable T>
+    void validate(const optional<T>& item) {
         if (item) {
             item->validate(*this);
         }
@@ -66,7 +70,8 @@ class ValidateContext {
     }
 
     /// Validate an item and throw if errors found. Convenience for callers.
-    template <Validatable T> static void require_valid(const T& item, bool schema_only = false) {
+    template <Validatable T>
+    static void require_valid(const T& item, bool schema_only = false) {
         ValidateContext ctx{schema_only};
         item.validate(ctx);
         ctx.throw_if_errors();

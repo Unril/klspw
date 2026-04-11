@@ -51,7 +51,8 @@ using string_views = std::span<const std::string_view>;
 
 /// Ordered map with O(1) lookup and deterministic iteration order.
 /// Used for all string-keyed maps in model types (serialized to JSON objects).
-template <typename V> using string_map = glz::ordered_map<string, V>;
+template <typename V>
+using string_map = glz::ordered_map<string, V>;
 
 // --- Glaze opts ---
 
@@ -76,7 +77,8 @@ namespace detail {
 ///   - fs::path → .string() (no std::formatter for fs::path)
 ///   - std::error_code → .message() (no std::formatter for error_code)
 ///   - anything else → pass through by value
-template <typename T> auto eval(T&& arg) {
+template <typename T>
+auto eval(T&& arg) {
     if constexpr (std::invocable<T>) {
         return std::invoke(std::forward<T>(arg));
     } else if constexpr (std::same_as<std::remove_cvref_t<T>, fs::path>) {
@@ -89,7 +91,8 @@ template <typename T> auto eval(T&& arg) {
 }
 
 /// The type that eval() produces for a given arg, decayed for use in format_string.
-template <typename T> using eval_t = std::remove_cvref_t<decltype(eval(std::declval<T>()))>;
+template <typename T>
+using eval_t = std::remove_cvref_t<decltype(eval(std::declval<T>()))>;
 
 } // namespace detail
 

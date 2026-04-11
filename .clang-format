@@ -10,29 +10,25 @@ AccessModifierOffset: -2
 
 BreakBeforeBraces: Attach
 AlignAfterOpenBracket: false
+BreakTemplateDeclarations: Yes
 
-# Avoid overly dense wrapped argument/parameter lists.
 AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false
 BinPackArguments: false
 BinPackParameters: OnePerLine
 
-# Keep constructors readable when they wrap.
 PackConstructorInitializers: CurrentLine
 ConstructorInitializerIndentWidth: 4
 
-# Avoid dense one-liners.
 AllowShortFunctionsOnASingleLine: All
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortBlocksOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 
-# Keep pointer/reference style stable.
 DerivePointerAlignment: false
 PointerAlignment: Left
 ReferenceAlignment: Left
 
-# Class layout readability.
 EmptyLineBeforeAccessModifier: LogicalBlock
 EmptyLineAfterAccessModifier: Never
 

@@ -46,6 +46,16 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ENABLE_COVERAGE": "ON"
       }
+    },
+    {
+      "name": "sanitize",
+      "inherits": "base",
+      "displayName": "Sanitize",
+      "description": "Debug build with ASan + UBSan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_SANITIZERS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -60,6 +70,10 @@
     {
       "name": "coverage",
       "configurePreset": "coverage"
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize"
     }
   ],
   "testPresets": [
@@ -80,6 +94,13 @@
     {
       "name": "coverage",
       "configurePreset": "coverage",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize",
       "output": {
         "outputOnFailure": true
       }

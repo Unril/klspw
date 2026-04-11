@@ -386,8 +386,8 @@ TEST_CASE("SourceSet::collect_library_deps uses correct scope") {
 // --- GradleProject → workspace model conversion ---
 
 namespace {
-constexpr klspw::GenerationOptions no_tests{.include_tests = false};
-constexpr klspw::GenerationOptions with_tests{.include_tests = true};
+constexpr klspw::GenerationOptions no_tests{.include_tests = false, .remove_missing_paths = false};
+constexpr klspw::GenerationOptions with_tests{.include_tests = true, .remove_missing_paths = false};
 } // namespace
 
 TEST_CASE("GradleProject::to_module builds module with deps and content roots") {
@@ -778,4 +778,48 @@ TEST_CASE("WorkspaceData::merge appends kotlin settings") {
     REQUIRE(ws1.kotlin_settings.size() == 2);
     CHECK(ws1.kotlin_settings[0].module == "a");
     CHECK(ws1.kotlin_settings[1].module == "b");
+}
+
+// --- SourceSet::remove_missing_paths ---
+
+TEST_CASE("remove_missing_paths removes nonexistent jars from compile_classpath") {
+    klspw::SourceSet ss{.name = "main", .compile_classpath = {"/tmp", "/nonexistent/a.jar", "/nonexistent/b.jar"}};
+
+    ss.remove_missing_paths();
+
+    REQUIRE(ss.compile_classpath.size() == 1);
+    CHECK(ss.compile_classpath[0] == "/tmp");
+}
+
+TEST_CASE("remove_missing_paths removes nonexistent source roots") {
+    klspw::SourceSet ss{.name = "main",
+        .source_roots = {"/tmp", "/nonexistent/src"},
+        .java_source_roots = {"/tmp", "/nonexistent/java"},
+        .resources_roots = {"/tmp", "/nonexistent/res"},
+        .classes_dirs = {"/tmp", "/nonexistent/classes"}};
+
+    ss.remove_missing_paths();
+
+    CHECK(ss.source_roots == klspw::strings{"/tmp"});
+    CHECK(ss.java_source_roots == klspw::string_set{"/tmp"});
+    CHECK(ss.resources_roots == klspw::string_set{"/tmp"});
+    CHECK(ss.classes_dirs == klspw::strings{"/tmp"});
+}
+
+TEST_CASE("remove_missing_paths no-op when all paths exist") {
+    klspw::SourceSet ss{.name = "main", .source_roots = {"/tmp"}, .compile_classpath = {"/tmp"}};
+
+    ss.remove_missing_paths();
+
+    CHECK(ss.source_roots.size() == 1);
+    CHECK(ss.compile_classpath.size() == 1);
+}
+
+TEST_CASE("remove_missing_paths handles empty collections") {
+    klspw::SourceSet ss{.name = "main"};
+
+    ss.remove_missing_paths();
+
+    CHECK(ss.compile_classpath.empty());
+    CHECK(ss.source_roots.empty());
 }

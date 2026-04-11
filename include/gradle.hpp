@@ -54,8 +54,52 @@ struct SourceSet {
     string compile_classpath_configuration_name; ///< Gradle configuration name for compile classpath.
     string runtime_classpath_configuration_name; ///< Gradle configuration name for runtime classpath.
 
+    void describe() const {
+        d_info("    source set '{}'{}: {} source root(s), {} compile classpath jar(s), {} source jar mapping(s)",
+            name,
+            is_test() ? " [test]" : "",
+            source_roots.size(),
+            compile_classpath.size(),
+            source_classpath.size());
+        d_debug("      java_source_roots: {}, resources_roots: {}, classes_dirs: {}, runtime_classpath: {}",
+            java_source_roots.size(),
+            resources_roots.size(),
+            classes_dirs.size(),
+            runtime_classpath.size());
+        d_debug("      resources_dir: {}", resources_dir.value_or("(none)"));
+        d_debug("      compile_config: {}, runtime_config: {}",
+            compile_classpath_configuration_name,
+            runtime_classpath_configuration_name);
+        for (const auto& root : source_roots) {
+            d_debug("      source: {}", root);
+        }
+        for (const auto& root : resources_roots) {
+            d_debug("      resource: {}", root);
+        }
+        for (const auto& jar : compile_classpath) {
+            d_trace("      classpath: {}", jar);
+        }
+    }
+
     /// Heuristic: any source set whose name contains "test" or "Test".
     bool is_test() const { return name.contains("test") || name.contains("Test"); }
+
+    /// Remove entries from path collections that don't exist on disk.
+    void remove_missing_paths() {
+        const auto warn_missing = [](const auto& path) {
+            if (!fs::exists(path)) {
+                spdlog::warn("missing path: {}", path);
+                return true;
+            }
+            return false;
+        };
+        std::erase_if(source_roots, warn_missing);
+        std::erase_if(compile_classpath, warn_missing);
+        std::erase_if(classes_dirs, warn_missing);
+        // java_source_roots and resources_roots are subsets of source_roots — filter after.
+        std::erase_if(java_source_roots, warn_missing);
+        std::erase_if(resources_roots, warn_missing);
+    }
 
     /// Source roots not in java_source_roots and not in resources_roots.
     /// Used to populate KotlinSettingsData.pure_kotlin_source_folders.
@@ -69,23 +113,23 @@ struct SourceSet {
         vector<LibraryRootData> roots{{.path = string{jar}}};
         // Prefer Gradle-resolved source jar, fall back to filesystem discovery.
         if (auto it = source_classpath.find(string{jar}); it != source_classpath.end()) {
-            roots.push_back({.path = it->second, .type = "SOURCES"});
+            roots.push_back({.path = it->second, .type = root_type_sources});
         } else if (auto src = SourceResolver{jar}.find()) {
-            roots.push_back({.path = std::move(*src), .type = "SOURCES"});
+            roots.push_back({.path = std::move(*src), .type = root_type_sources});
         }
-        return {.name = file_stem(jar), .type = "java-imported", .roots = std::move(roots)};
+        return {.name = file_stem(jar), .type = library_type_imported, .roots = std::move(roots)};
     }
 
     /// Build a LibraryData without source attachment. Type "java-imported" is required by kotlin-lsp.
     static LibraryData library_from_jar(string_view jar) {
-        return {.name = file_stem(jar), .type = "java-imported", .roots = {{.path = string{jar}}}};
+        return {.name = file_stem(jar), .type = library_type_imported, .roots = {{.path = string{jar}}}};
     }
 
     /// Convert source_roots into typed SourceRootData entries.
     /// Resource dirs are excluded from the source pass and added separately as resource-type roots.
     vector<SourceRootData> to_source_roots() const {
-        const auto src_type = is_test() ? "java-test"s : "java-source"s;
-        const auto res_type = is_test() ? "java-test-resource"s : "java-resource"s;
+        const auto src_type = is_test() ? source_type_test : source_type_java;
+        const auto res_type = is_test() ? source_type_test_resource : source_type_resource;
         auto to_src = [&](const auto& p) -> SourceRootData { return {.path = p, .type = src_type}; };
         auto to_res = [&](const auto& p) -> SourceRootData { return {.path = p, .type = res_type}; };
         // Exclude resource dirs from source pass -- they're added below as resource-type roots.
@@ -112,13 +156,6 @@ struct SourceSet {
         auto to_dep = [&](const auto& jar) -> LibraryDep { return {.name = file_stem(jar), .scope = scope}; };
         return compile_classpath | v::transform(to_dep) | to_vector();
     }
-
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("    source set '{}': {} source root(s), {} compile classpath jar(s)",
-            name,
-            source_roots.size(),
-            compile_classpath.size()));
-    }
 };
 
 // --- GradleProject ---
@@ -131,23 +168,33 @@ struct SourceSet {
 /// excluded from workspace generation.
 struct GradleProject {
     string project_path; ///< Gradle project path (e.g., ":", ":subproject").
+    string project_name; ///< Gradle project name (from settings.gradle.kts).
     string project_dir; ///< Absolute path to the project directory.
     string kind; ///< Project kind (e.g., "jvm", "non-jvm").
     strings plugins; ///< Applied Gradle plugin class names.
     vector<SourceSet> source_sets; ///< All source sets discovered by the init script.
     opt_string skip_reason; ///< If set, project is excluded from workspace generation.
 
-    bool is_skipped() const { return skip_reason.has_value(); }
-
-    string module_name() const { return fs::path{project_dir}.filename().string(); }
-
-    void describe(DescribeContext& ctx) const {
+    void describe() const {
         if (is_skipped()) {
-            ctx.add(format("  {} [SKIPPED: {}]", project_path, *skip_reason));
+            d_info("  {} [SKIPPED: {}]", project_path, *skip_reason);
             return;
         }
-        ctx.add(format("  {} ({} source set(s), {} plugin(s))", project_path, source_sets.size(), plugins.size()));
-        ctx.describe(source_sets);
+        d_info("  {} (name: {}, dir: {}, kind: {}, {} source set(s), {} plugin(s))",
+            project_path,
+            project_name,
+            project_dir,
+            kind,
+            source_sets.size(),
+            plugins.size());
+        d_describe(source_sets);
+    }
+
+    bool is_skipped() const { return skip_reason.has_value(); }
+
+    /// Gradle project name. Falls back to directory name if not provided (forward compat).
+    string module_name() const {
+        return project_name.empty() ? fs::path{project_dir}.filename().string() : project_name;
     }
 
     /// Return source sets to include in the workspace. Filters out test sets when disabled.
@@ -203,6 +250,11 @@ struct GradleBuildOutput {
     string root_project; ///< Absolute path to the Gradle root project directory.
     vector<GradleProject> projects; ///< All discovered (sub)projects, including skipped ones.
 
+    void describe() const {
+        d_info("{} project(s), {} active (root: {})", projects.size(), active_project_count(), root_project);
+        d_describe(projects);
+    }
+
     /// Parse a JSON string into a GradleBuildOutput. Ignores unknown keys.
     static GradleBuildOutput from_json(string_view json_str) {
         GradleBuildOutput output;
@@ -222,11 +274,6 @@ struct GradleBuildOutput {
         return static_cast<size_t>(r::count_if(projects, std::not_fn(&GradleProject::is_skipped)));
     }
 
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("{} project(s), {} active", projects.size(), active_project_count()));
-        ctx.describe(projects);
-    }
-
     /// Convert all active projects into a merged WorkspaceData.
     /// Libraries are deduplicated by name (first occurrence wins).
     WorkspaceData to_workspace(const string& compiler_args_json, const GenerationOptions& options) const {
@@ -234,6 +281,12 @@ struct GradleBuildOutput {
 
         auto to_active_sets = [&](const auto& p) { return p.active_sets(options); };
         auto sets_per_project = active_projects | v::transform(to_active_sets) | to_vector();
+
+        if (options.remove_missing_paths) {
+            for (auto& ss : sets_per_project | v::join) {
+                ss.remove_missing_paths();
+            }
+        }
 
         auto to_libs = [&](const auto& ss) {
             return options.attach_sources ? ss.collect_libraries_with_sources() : ss.collect_libraries();
@@ -250,8 +303,8 @@ struct GradleBuildOutput {
         ws.libraries = std::move(ws.libraries) | unique_by(&LibraryData::name);
 
         if (options.attach_sources) {
-            const auto with_sources = r::count_if(ws.libraries, &LibraryData::with_sources);
-            spdlog::info("  sources attached to {}/{} libraries", with_sources, ws.libraries.size());
+            const auto with_sources = r::count_if(ws.libraries, &LibraryData::has_sources);
+            d_info("  sources attached to {}/{} libraries", with_sources, ws.libraries.size());
         }
 
         return ws;
@@ -261,6 +314,9 @@ struct GradleBuildOutput {
 } // namespace klspw
 
 // camel_case auto-converts snake_case C++ fields to camelCase JSON keys.
-template <> struct glz::meta<klspw::SourceSet> : glz::camel_case {};
-template <> struct glz::meta<klspw::GradleProject> : glz::camel_case {};
-template <> struct glz::meta<klspw::GradleBuildOutput> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::SourceSet> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::GradleProject> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::GradleBuildOutput> : glz::camel_case {};

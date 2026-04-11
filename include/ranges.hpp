@@ -15,7 +15,8 @@ concept Hashable = requires(T val) {
     { std::hash<T>{}(val) } -> std::convertible_to<std::size_t>;
 };
 
-template <typename Proj> struct unique_by_adaptor : r::range_adaptor_closure<unique_by_adaptor<Proj>> {
+template <typename Proj>
+struct unique_by_adaptor : r::range_adaptor_closure<unique_by_adaptor<Proj>> {
     Proj proj;
 
     template <r::input_range R>
@@ -52,7 +53,8 @@ auto unique_by(Proj proj = {}) {
 }
 
 /// Pipe adaptor: range | to_vector() materializes into a vector.
-template <typename T = void> constexpr auto to_vector() {
+template <typename T = void>
+constexpr auto to_vector() {
     if constexpr (std::is_void_v<T>) {
         return r::to<vector>();
     } else {

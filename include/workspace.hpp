@@ -17,6 +17,20 @@
 
 namespace klspw {
 
+/// Library/SDK root type constants used in LibraryRootData and SdkRootData.
+inline constexpr auto root_type_classes = "CLASSES"s;
+inline constexpr auto root_type_sources = "SOURCES"s;
+inline constexpr auto root_type_javadoc = "JAVADOC"s;
+
+/// Source root type constants used in SourceRootData.
+inline constexpr auto source_type_java = "java-source"s;
+inline constexpr auto source_type_test = "java-test"s;
+inline constexpr auto source_type_resource = "java-resource"s;
+inline constexpr auto source_type_test_resource = "java-test-resource"s;
+
+/// Library type constant used in LibraryData.
+inline constexpr auto library_type_imported = "java-imported"s;
+
 enum class DependencyScope : uint8_t { compile, test, runtime, provided };
 
 /// A source or resource folder within a ContentRootData.
@@ -26,7 +40,7 @@ struct SourceRootData {
     string path; ///< Absolute path or workspace-relative path.
     string type; ///< "java-source", "java-test", "java-resource", "java-test-resource".
 
-    void describe(DescribeContext& ctx) const { ctx.add(format("      {} [{}]", path, type)); }
+    void describe() const { d_trace("      {} [{}]", path, type); }
 };
 
 /// Root directory containing module source code and resources.
@@ -38,9 +52,9 @@ struct ContentRootData {
     strings excluded_patterns; ///< Ant-style patterns to exclude (e.g., "**/target/**").
     strings excluded_urls; ///< URL-based exclusions (rarely used in practice).
 
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("    root: {} ({} source root(s))", path, source_roots.size()));
-        ctx.describe(source_roots);
+    void describe() const {
+        d_debug("    root: {} ({} source root(s))", path, source_roots.size());
+        d_describe(source_roots);
     }
 };
 
@@ -92,19 +106,23 @@ using DependencyData = variant<ModuleDep, LibraryDep, SdkDep, InheritedSdk, Modu
 // --- Glaze metadata (between namespace blocks for visibility) ---
 
 // Variant meta: tagged dispatch by "type" field.
-template <> struct glz::meta<klspw::DependencyScope> {
+template <>
+struct glz::meta<klspw::DependencyScope> {
     using enum klspw::DependencyScope;
     static constexpr auto value = enumerate("compile", compile, "test", test, "runtime", runtime, "provided", provided);
 };
 
-template <> struct glz::meta<klspw::DependencyData> {
+template <>
+struct glz::meta<klspw::DependencyData> {
     static constexpr std::string_view tag = "type";
     static constexpr auto ids = std::array{"module", "library", "sdk", "inheritedSdk", "moduleSource"};
 };
 
 // Non-variant types: camel_case auto-converts snake_case fields to camelCase JSON keys.
-template <> struct glz::meta<klspw::ContentRootData> : glz::camel_case {};
-template <> struct glz::meta<klspw::SourceRootData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::ContentRootData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::SourceRootData> : glz::camel_case {};
 
 namespace klspw {
 
@@ -135,24 +153,48 @@ struct ModuleData {
     vector<ContentRootData> content_roots; ///< Root directories containing source code.
     vector<FacetData> facets; ///< Framework facets (Spring, JPA). Usually empty.
 
-    void describe(DescribeContext& ctx) const {
-        const auto is_dep = [](const auto& d) { return std::holds_alternative<LibraryDep>(d); };
-        const auto deps_count = r::count_if(dependencies, is_dep);
-        ctx.add(format("  {} ({} deps, {} content root(s))", name, deps_count, content_roots.size()));
-        if (ctx.verbose()) {
-            ctx.describe(content_roots);
-        }
+    void describe() const {
+        d_info("  {} ({} deps: {} lib, {} mod, {} sdk; {} content root(s))",
+            name,
+            dependencies.size(),
+            dep_count<LibraryDep>(),
+            dep_count<ModuleDep>(),
+            dep_count<SdkDep>(),
+            content_roots.size());
+        d_describe(content_roots);
     }
+
+    template <typename DepType>
+    auto deps_of_type() const {
+        return dependencies | v::filter([](const auto& d) { return std::holds_alternative<DepType>(d); }) |
+               v::transform([](const auto& d) -> const DepType& { return std::get<DepType>(d); });
+    }
+
+    template <typename DepType>
+    size_t dep_count() const {
+        return static_cast<size_t>(
+            r::count_if(dependencies, [](const auto& d) { return std::holds_alternative<DepType>(d); }));
+    }
+
+    template <typename DepType>
+    void remove_deps(const string_set& names) {
+        std::erase_if(dependencies, [&](const auto& d) {
+            const auto* dep = std::get_if<DepType>(&d);
+            return dep != nullptr && names.contains(dep->name);
+        });
+    }
+
+    void add_deps(auto&& new_deps) { dependencies.append_range(std::forward<decltype(new_deps)>(new_deps)); }
 };
 
 /// A single JAR or directory within a library's classpath.
 struct LibraryRootData {
     string path; ///< JAR file or directory path.
-    string type = "CLASSES"; ///< "CLASSES" (default), "SOURCES", or "JAVADOC".
+    string type = root_type_classes;
     string inclusion_options =
         "root_itself"; ///< "root_itself", "archives_under_root", "archives_under_root_recursively".
 
-    void describe(DescribeContext& ctx) const { ctx.add(format("    {}  [{}]", ctx.format_path(path), type)); }
+    void describe() const { d_trace("    {}  [{}]", path, type); }
 };
 
 /// An external library (jar dependency).
@@ -168,15 +210,16 @@ struct LibraryData {
     strings excluded_roots; ///< Paths to exclude from classpath.
     optional<XmlElement> properties; ///< Maven coordinates or other metadata as XML.
 
-    /// Libraries with >1 root have at least one SOURCES entry (CLASSES is always first).
-    bool with_sources() const { return roots.size() > 1; }
-
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("  {} ({} root(s))", name, roots.size()));
-        if (ctx.verbose()) {
-            ctx.describe(roots);
-        }
+    void describe() const {
+        d_trace("  {} ({} root(s))", name, roots.size());
+        d_describe(roots);
     }
+
+    /// Libraries with >1 root have at least one SOURCES entry (CLASSES is always first).
+    /// True when the library has source roots attached.
+    /// Invariant: libraries are constructed with either 1 root (CLASSES only)
+    /// or 2+ roots (CLASSES + SOURCES) by SourceSet::library_from_jar_with_sources.
+    bool has_sources() const { return roots.size() > 1; }
 };
 
 /// A single classpath entry within an SDK.
@@ -234,11 +277,13 @@ struct KotlinSettingsData {
     int version = 5; ///< Settings schema version.
     bool flush_needed = false; ///< Whether settings refresh is needed.
 
-    void describe(DescribeContext& ctx) const {
-        ctx.add(format("  module={}, {} source root(s), {} pure-kotlin folder(s)",
+    void describe() const {
+        d_debug("  module={}, version={}, kind={}, {} source root(s), {} pure-kotlin folder(s)",
             module,
+            version,
+            kind,
             source_roots.size(),
-            pure_kotlin_source_folders.size()));
+            pure_kotlin_source_folders.size());
     }
 };
 
@@ -263,6 +308,19 @@ struct WorkspaceData {
     vector<KotlinSettingsData> kotlin_settings; ///< Kotlin compiler settings per module.
     vector<JavaSettingsData> java_settings; ///< Java compiler settings per module.
 
+    void describe() const {
+        d_info("{} module(s), {} library(ies), {} kotlin setting(s)",
+            modules.size(),
+            libraries.size(),
+            kotlin_settings.size());
+        d_debug("Modules ({}):", modules.size());
+        d_describe(modules);
+        d_debug("Libraries ({}):", libraries.size());
+        d_describe(libraries);
+        d_debug("Kotlin settings ({}):", kotlin_settings.size());
+        d_describe(kotlin_settings);
+    }
+
     /// Merge another WorkspaceData into this one.
     /// Modules, kotlin_settings, java_settings, and sdks are appended.
     /// Libraries are deduplicated by name (first occurrence wins).
@@ -273,6 +331,58 @@ struct WorkspaceData {
         sdks.append_range(std::move(other.sdks));
         libraries.append_range(std::move(other.libraries));
         libraries = std::move(libraries) | unique_by(&LibraryData::name);
+    }
+
+    /// Promote library dependencies to module dependencies when the library
+    /// corresponds to a module in the workspace (e.g., sibling Gradle root).
+    /// Also removes the promoted libraries from the libraries list.
+    /// Library name "Foo-1.0" matches module name "Foo" (name + "-" prefix).
+    /// Returns the number of promoted dependencies.
+    size_t promote_module_deps() {
+        const auto mod_names = module_names();
+        if (mod_names.empty()) {
+            return 0;
+        }
+
+        // Sorted by descending length so "CoreLib" matches before "Core".
+        auto sorted_names = mod_names | r::to<vector<string>>();
+        r::sort(sorted_names, std::greater{}, &string::size);
+
+        const auto matches_module = [](string_view lib_name, string_view module_name) {
+            return lib_name.size() > module_name.size() && lib_name.starts_with(module_name) &&
+                   lib_name[module_name.size()] == '-';
+        };
+
+        const auto find_module = [&](string_view lib_name) {
+            const auto it = r::find_if(sorted_names, [&](const auto& name) { return matches_module(lib_name, name); });
+            return it != sorted_names.end() ? *it : opt_string{};
+        };
+
+        string_set promoted_lib_names;
+
+        for (auto& mod : modules) {
+            // Collect promotions: lib dep -> module dep.
+            vector<ModuleDep> new_module_deps;
+            string_set libs_to_remove;
+
+            for (const auto& lib : mod.deps_of_type<LibraryDep>()) {
+                const auto module_name = find_module(lib.name);
+                if (!module_name || *module_name == mod.name) {
+                    continue;
+                }
+                libs_to_remove.insert(lib.name);
+                promoted_lib_names.insert(lib.name);
+                new_module_deps.push_back({.name = *module_name, .scope = lib.scope, .isExported = lib.isExported});
+            }
+
+            // Apply: remove old lib deps, add new module deps.
+            mod.remove_deps<LibraryDep>(libs_to_remove);
+            mod.add_deps(new_module_deps);
+        }
+
+        remove_libraries(promoted_lib_names);
+
+        return promoted_lib_names.size();
     }
 
     /// Serialize to pretty-printed JSON matching the kotlin-lsp workspace.json schema.
@@ -296,21 +406,29 @@ struct WorkspaceData {
     /// Read workspace.json from a file.
     static WorkspaceData load_json_file(const fs::path& path) { return from_json(read_file(path)); }
 
-    void describe(DescribeContext& ctx) const {
-        ctx.describe_section(format("Modules ({}):", modules.size()), modules);
-        ctx.describe_section(format("Libraries ({}):", libraries.size()), libraries);
-        ctx.flush_stripped_prefixes();
-        ctx.describe_section(format("Kotlin settings ({}):", kotlin_settings.size()), kotlin_settings);
+    string_set module_names() const { return modules | v::transform(&ModuleData::name) | r::to<string_set>(); }
+
+    void remove_libraries(const string_set& names) {
+        if (!names.empty()) {
+            std::erase_if(libraries, [&](const auto& lib) { return names.contains(lib.name); });
+        }
     }
 };
 
 } // namespace klspw
 
 // camel_case for all remaining types with snake_case fields.
-template <> struct glz::meta<klspw::ModuleData> : glz::camel_case {};
-template <> struct glz::meta<klspw::LibraryRootData> : glz::camel_case {};
-template <> struct glz::meta<klspw::LibraryData> : glz::camel_case {};
-template <> struct glz::meta<klspw::SdkData> : glz::camel_case {};
-template <> struct glz::meta<klspw::KotlinSettingsData> : glz::camel_case {};
-template <> struct glz::meta<klspw::JavaSettingsData> : glz::camel_case {};
-template <> struct glz::meta<klspw::WorkspaceData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::ModuleData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::LibraryRootData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::LibraryData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::SdkData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::KotlinSettingsData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::JavaSettingsData> : glz::camel_case {};
+template <>
+struct glz::meta<klspw::WorkspaceData> : glz::camel_case {};

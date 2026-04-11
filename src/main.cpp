@@ -42,9 +42,9 @@ int main(int argc, char* argv[]) try {
     CLI::App app{{"klspw - Generate workspace.json for kotlin-lsp from Gradle builds"}};
     app.set_version_flag("-V,--version", std::string{klspw::version});
     app.footer(R"(Quick start:
-  klspw init ./my-project -c klspw.yaml          # one root, default ./gradlew
-  klspw init "./proj gradlew" -c klspw.yaml      # one root, custom build
-  klspw init ./proj_1 ./proj_2 -b my-build       # two roots, global build
+  klspw -c . init ./my-project                   # one root, default ./gradlew
+  klspw -c . init "./proj gradlew"               # one root, custom build
+  klspw -c . init ./proj_1 ./proj_2 -b my-build  # two roots, global build
   klspw generate                                 # run Gradle, write workspace.json)");
     app.require_subcommand(1);
 
@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) try {
 
     if (val->parsed()) {
         klspw::ValidateContext::require_valid(cfg);
-        spdlog::info("Config valid.");
+        klspw::d_info("Config valid.");
         return 0;
     }
 

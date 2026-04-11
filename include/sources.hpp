@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include "common.hpp"
+#include "describe.hpp"
 #include "files.hpp"
 #include "strings.hpp"
 
@@ -37,11 +38,11 @@ class SourceResolver {
     /// Find source artifact. Returns the path to a source jar or directory if found.
     opt_string find() const {
         if (auto src = find_pkg_cache_sources()) {
-            spdlog::trace("  sources (pkg-cache): {} -> {}", jar_path_.string(), *src);
+            d_trace("  sources (pkg-cache): {} -> {}", jar_path_.string(), *src);
             return src;
         }
         if (auto src = find_sibling_source_jar()) {
-            spdlog::trace("  sources (sibling): {} -> {}", jar_path_.string(), *src);
+            d_trace("  sources (sibling): {} -> {}", jar_path_.string(), *src);
             return src;
         }
         return nullopt;

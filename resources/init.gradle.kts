@@ -106,6 +106,7 @@ fun Project.detectModel(): Map<String, Any?> {
 
         return mapOf(
             "projectPath" to path,
+            "projectName" to name,
             "projectDir" to projectDir.safeCanonicalPath(),
             "kind" to "jvm",
             "plugins" to pluginClasses,
@@ -117,6 +118,7 @@ fun Project.detectModel(): Map<String, Any?> {
 
     return mapOf(
         "projectPath" to path,
+        "projectName" to name,
         "projectDir" to projectDir.safeCanonicalPath(),
         "kind" to if (hasKotlinExt) "kotlin-non-jvm-or-unsupported" else "non-jvm",
         "plugins" to pluginClasses,
