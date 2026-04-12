@@ -67,14 +67,15 @@ jobs:
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key:
-            ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json',
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json',
             '**/CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-
 
       - name: Acquire vcpkg
         run: |
-          git clone --depth 1 --branch 2026.03.18 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout 401bb04e16e1ae03fdbec04edea4e52c93e9aeb5
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Configure

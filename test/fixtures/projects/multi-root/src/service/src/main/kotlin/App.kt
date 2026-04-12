@@ -1,3 +1,3 @@
 fun main() {
-    println(greet("world"))
+  println(greet("world"))
 }

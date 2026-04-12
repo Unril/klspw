@@ -7,6 +7,5 @@
         "--clang-tidy",
         "--header-insertion=iwyu",
         "--completion-style=detailed"
-    ],
-    "cmakeFormatter.lineWidth": 120
+    ]
 }

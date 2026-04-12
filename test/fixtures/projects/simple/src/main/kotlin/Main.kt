@@ -1,3 +1,3 @@
 fun main() {
-    println("Hello from simple project")
+  println("Hello from simple project")
 }

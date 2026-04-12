@@ -36,6 +36,8 @@ format:
     gersemi -i CMakeLists.txt
     prettier --write '.github/**/*.yml' '.clusterfuzzlite/*.yaml' 'CMakePresets.json'
     shfmt -w -i 2 scripts/ .clusterfuzzlite/build.sh
+    uvx black scripts/*.py
+    find resources test/fixtures -name '*.kt' -o -name '*.kts' | xargs ktfmt --google-style
 
 # Fuzz targets (requires Clang, uses libFuzzer + ASan)
 fuzz-build:

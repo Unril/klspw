@@ -1,4 +1,4 @@
-FROM gcr.io/oss-fuzz-base/base-builder:v1
+FROM gcr.io/oss-fuzz-base/base-builder:v1@sha256:0e8708f9aecffe97e424edf3ea5f12c598ecc4aee27fb137a9dcf7367b1e76f1
 
 # Install vcpkg dependencies and build tools.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install vcpkg.
 ENV VCPKG_ROOT=/vcpkg
-RUN git clone --depth 1 --branch 2026.03.18 https://github.com/microsoft/vcpkg "$VCPKG_ROOT" \
+RUN git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT" \
+    && git -C "$VCPKG_ROOT" checkout 401bb04e16e1ae03fdbec04edea4e52c93e9aeb5 \
     && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
 COPY . $SRC/klspw

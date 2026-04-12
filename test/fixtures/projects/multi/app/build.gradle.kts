@@ -1,3 +1,1 @@
-dependencies {
-    implementation(project(":lib"))
-}
+dependencies { implementation(project(":lib")) }

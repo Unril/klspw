@@ -14,9 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  security-events: write
-  packages: read
-  actions: read
   contents: read
 
 jobs:
@@ -24,6 +21,18 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+      CC: gcc-15
+      CXX: g++-15
 
     strategy:
       fail-fast: false
@@ -57,28 +66,23 @@ jobs:
       - name: Create vcpkg binary cache dir
         if: matrix.build-mode == 'manual'
         run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
-        env:
-          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
 
       - name: Cache vcpkg binaries
         if: matrix.build-mode == 'manual'
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          path: ${{ github.workspace }}/.vcpkg-cache
-          key: codeql-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json',
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key:
+            codeql-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json',
             '**/CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
             codeql-${{ runner.arch }}-vcpkg-
 
       - name: Build
         if: matrix.build-mode == 'manual'
-        env:
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
-          CC: gcc-15
-          CXX: g++-15
         run: |
-          git clone --depth 1 --branch 2026.03.18 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout 401bb04e16e1ae03fdbec04edea4e52c93e9aeb5
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
           cmake --preset release
           cmake --build --preset release --parallel

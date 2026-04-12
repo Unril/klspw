@@ -1,11 +1,5 @@
-plugins {
-    kotlin("jvm") version "2.0.21"
-}
+plugins { kotlin("jvm") version "2.0.21" }
 
-repositories {
-    mavenCentral()
-}
+repositories { mavenCentral() }
 
-dependencies {
-    implementation(files("../core/build/libs/core.jar"))
-}
+dependencies { implementation(files("../core/build/libs/core.jar")) }
