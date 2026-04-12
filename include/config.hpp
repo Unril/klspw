@@ -186,8 +186,8 @@ inline fs::path resolve_config_path(const fs::path& path) {
 /// Roots without a build command inherit the global build (default: ./gradlew).
 class StarterConfig {
   public:
-    static constexpr auto default_workspace_file = "./workspace.json"s;
-    static constexpr auto default_gradle_command = "./gradlew"s;
+    static const string default_workspace_file;
+    static const string default_gradle_command;
 
     /// Construct from CLI root arguments. Each arg is "path [build_command...]".
     /// First word is the root path, remaining words are the per-root build command.
@@ -346,3 +346,7 @@ class Config {
 };
 
 } // namespace klspw
+
+// Out-of-class definitions for StarterConfig static members.
+inline const klspw::string klspw::StarterConfig::default_workspace_file = "./workspace.json";
+inline const klspw::string klspw::StarterConfig::default_gradle_command = "./gradlew";

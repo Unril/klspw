@@ -18,18 +18,18 @@
 namespace klspw {
 
 /// Library/SDK root type constants used in LibraryRootData and SdkRootData.
-inline constexpr auto root_type_classes = "CLASSES"s;
-inline constexpr auto root_type_sources = "SOURCES"s;
-inline constexpr auto root_type_javadoc = "JAVADOC"s;
+inline const string root_type_classes = "CLASSES";
+inline const string root_type_sources = "SOURCES";
+inline const string root_type_javadoc = "JAVADOC";
 
 /// Source root type constants used in SourceRootData.
-inline constexpr auto source_type_java = "java-source"s;
-inline constexpr auto source_type_test = "java-test"s;
-inline constexpr auto source_type_resource = "java-resource"s;
-inline constexpr auto source_type_test_resource = "java-test-resource"s;
+inline const string source_type_java = "java-source";
+inline const string source_type_test = "java-test";
+inline const string source_type_resource = "java-resource";
+inline const string source_type_test_resource = "java-test-resource";
 
 /// Library type constant used in LibraryData.
-inline constexpr auto library_type_imported = "java-imported"s;
+inline const string library_type_imported = "java-imported";
 
 enum class DependencyScope : uint8_t { compile, test, runtime, provided };
 
