@@ -1,5 +1,13 @@
 # klspw
 
+[![CI](https://github.com/Unril/klspw/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Unril/klspw?sort=semver)](https://github.com/Unril/klspw/releases)
+[![License](https://img.shields.io/github/license/Unril/klspw)](./LICENSE)
+[![CodeQL](https://github.com/Unril/klspw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Unril/klspw/badge)](https://scorecard.dev/viewer/?uri=github.com/Unril/klspw)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon%20%7C%20Intel-black)](https://github.com/Unril/klspw)
+[![Linux](https://img.shields.io/badge/Linux-x86__64-black)](https://github.com/Unril/klspw)
+
 Generate `workspace.json` for [kotlin-lsp] from Gradle builds.
 
 Targets repositories where the default kotlin-lsp project import does not work -- when the build runs through a wrapper around Gradle, or when dependencies come from custom package or cache layouts.
@@ -195,11 +203,17 @@ All managed via vcpkg manifest mode.
 
 ## CI
 
-Two GitHub Actions workflows automate building, testing, and releasing:
+GitHub Actions workflows automate building, testing, security scanning, and releasing:
 
-`ci.yml` runs on every push to `master` and on pull requests. It builds and tests on macOS 26 arm64 and Intel, both using Xcode 26.4. The workflow uses the `release` CMake preset with vcpkg for dependency management. Cached vcpkg binaries speed up repeat runs. After building, it installs into a staging directory and runs a smoke test (`--version` + `init` on a fixture project).
+`ci.yml` runs on every push to `master` and on pull requests. It builds and tests on macOS 26 (arm64 and Intel, both using Xcode 26.4) and Ubuntu 24.04 (GCC 14). The workflow uses the `release` CMake preset with vcpkg for dependency management. Cached vcpkg binaries speed up repeat runs. After building, it installs into a staging directory and runs a smoke test (`--version` + `init` on a fixture project).
 
-`release.yml` triggers when a `v*` tag is pushed. It creates a GitHub Release with auto-generated notes from the commit history. The release provides a stable source tarball URL for the Homebrew formula.
+`release.yml` triggers when a `v*` tag is pushed. It builds release binaries for macOS arm64, macOS x86_64, and Linux x86_64, packages them as `.tar.gz` archives, generates [artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for supply-chain integrity, and uploads them to a GitHub Release with auto-generated notes.
+
+`codeql.yml` runs CodeQL static analysis on pushes to `master`, pull requests, and weekly. It scans both C++ source code (manual build with GCC 14 on Ubuntu) and GitHub Actions workflow files.
+
+`dependency-review.yml` runs on pull requests and flags newly introduced vulnerable dependencies or license violations.
+
+`scorecard.yml` runs the [OpenSSF Scorecard](https://scorecard.dev) analysis weekly and on pushes to `master`, publishing results to the code scanning dashboard.
 
 Homebrew bottles (prebuilt binaries) are built separately by the [homebrew-tap] repo's own CI workflows using `brew test-bot`.
 
@@ -213,14 +227,20 @@ Homebrew bottles (prebuilt binaries) are built separately by the [homebrew-tap] 
    git push origin v0.2.0
    ```
 
-3. CI builds and tests both architectures. The release workflow creates a GitHub Release with auto-generated notes.
-4. Get the tarball sha256:
+3. The release workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release with the archives attached.
+4. Get the source tarball sha256 for Homebrew:
 
    ```bash
    curl -sL https://github.com/Unril/klspw/archive/refs/tags/v0.2.0.tar.gz | shasum -a 256
    ```
 
 5. In the [homebrew-tap] repo, update `Formula/klspw.rb` with the new `url`, `sha256`, and version. Open a PR, let the tap CI build bottles, then label the PR `pr-pull` to publish them.
+
+Users can verify the provenance of downloaded release binaries:
+
+```bash
+gh attestation verify ./klspw-darwin-arm64.tar.gz -R Unril/klspw
+```
 
 Users upgrade with `brew upgrade klspw`.
 

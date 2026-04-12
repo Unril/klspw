@@ -6,20 +6,126 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  publish-release:
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.artifact_name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-26
+            xcode: /Applications/Xcode_26.4.app
+            artifact_name: klspw-darwin-arm64
+          - name: macOS x86_64
+            os: macos-26-intel
+            xcode: /Applications/Xcode_26.4.app
+            artifact_name: klspw-darwin-x86_64
+          - name: Linux x86_64
+            os: ubuntu-latest
+            cc: gcc-14
+            cxx: g++-14
+            artifact_name: klspw-linux-x86_64
+
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+      CC: ${{ matrix.cc || '' }}
+      CXX: ${{ matrix.cxx || '' }}
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Select Xcode
+        if: matrix.xcode
+        run: |
+          sudo xcode-select -s ${{ matrix.xcode }}/Contents/Developer
+          c++ --version
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: c++ --version
+
+      - name: Create vcpkg binary cache dir
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json',
+            '**/CMakeLists.txt', 'CMakePresets.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-
+
+      - name: Acquire vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Build
+        run: |
+          cmake --preset release
+          cmake --build --preset release --parallel
+
+      - name: Test
+        run: ctest --preset release --output-on-failure
+
+      - name: Package
+        run: |
+          mkdir -p dist/${{ matrix.artifact_name }}
+          cp build/release/klspw dist/${{ matrix.artifact_name }}/klspw
+          tar -C dist -czf dist/${{ matrix.artifact_name }}.tar.gz ${{ matrix.artifact_name }}
+
+      - name: Attest release archive
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/${{ matrix.artifact_name }}.tar.gz
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}.tar.gz
+
+  publish-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download built archives
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
+            release-assets/**/*.tar.gz \
             --verify-tag \
             --generate-notes

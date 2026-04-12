@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -29,10 +29,16 @@ jobs:
           - name: macOS 26 Intel
             os: macos-26-intel
             xcode: /Applications/Xcode_26.4.app
+          - name: Ubuntu 24.04
+            os: ubuntu-latest
+            cc: gcc-14
+            cxx: g++-14
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+      CC: ${{ matrix.cc || '' }}
+      CXX: ${{ matrix.cxx || '' }}
 
     steps:
       - name: Checkout
@@ -44,6 +50,10 @@ jobs:
           sudo xcode-select -s ${{ matrix.xcode }}/Contents/Developer
           xcodebuild -version
           c++ --version
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: c++ --version
 
       - name: Create vcpkg binary cache dir
         run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
@@ -59,7 +69,7 @@ jobs:
 
       - name: Acquire vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Configure
