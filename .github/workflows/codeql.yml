@@ -46,16 +46,37 @@ jobs:
       # The project requires C++23 (ranges::to, views::join_with, append_range).
       # ubuntu-latest ships GCC 13 as default which lacks these.
       # GCC 15 from ubuntu-toolchain-r/test PPA has full C++23 library support.
-      - name: Install dependencies and build
+      - name: Install GCC 15
         if: matrix.build-mode == 'manual'
-        env:
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-          CC: gcc-15
-          CXX: g++-15
         run: |
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update -qq
           sudo apt-get install -y -qq g++-15
+
+      - name: Create vcpkg binary cache dir
+        if: matrix.build-mode == 'manual'
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+
+      - name: Cache vcpkg binaries
+        if: matrix.build-mode == 'manual'
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: codeql-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json',
+            '**/CMakeLists.txt', 'CMakePresets.json') }}
+          restore-keys: |
+            codeql-${{ runner.arch }}-vcpkg-
+
+      - name: Build
+        if: matrix.build-mode == 'manual'
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+          CC: gcc-15
+          CXX: g++-15
+        run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
           cmake --preset release
