@@ -16,18 +16,6 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: "vcpkg"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "c++"
-    commit-message:
-      prefix: "deps"
-
   - package-ecosystem: "docker"
     directory: "/.clusterfuzzlite"
     schedule:

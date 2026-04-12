@@ -73,10 +73,10 @@ jobs:
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key:
-            codeql-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json',
+            codeql-${{ runner.arch }}-vcpkg2-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json',
             '**/CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
-            codeql-${{ runner.arch }}-vcpkg-
+            codeql-${{ runner.arch }}-vcpkg2-
 
       - name: Build
         if: matrix.build-mode == 'manual'
