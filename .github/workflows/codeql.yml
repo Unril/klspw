@@ -7,6 +7,7 @@ on:
     branches: [master]
   schedule:
     - cron: "30 3 * * 6"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -77,7 +78,7 @@ jobs:
           CC: gcc-15
           CXX: g++-15
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git clone --depth 1 --branch 2026.03.18 https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
           cmake --preset release
           cmake --build --preset release --parallel

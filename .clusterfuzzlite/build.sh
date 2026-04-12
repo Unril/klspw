@@ -1,40 +1,51 @@
 #!/bin/bash -eu
 # ClusterFuzzLite build script for klspw.
 # Builds fuzz targets using the OSS-Fuzz toolchain (Clang + libFuzzer).
+#
 # Environment variables provided by the base image:
-#   $CC, $CXX       -- Clang compilers
-#   $CFLAGS, $CXXFLAGS -- sanitizer + coverage flags
-#   $LIB_FUZZING_ENGINE -- -fsanitize=fuzzer linker flag
-#   $OUT            -- output directory for fuzz target binaries
+#   $CC, $CXX           -- Clang compilers
+#   $CFLAGS, $CXXFLAGS  -- sanitizer + coverage flags (includes fuzzer-no-link)
+#   $LIB_FUZZING_ENGINE -- libFuzzer archive to link fuzz targets against
+#   $OUT                -- output directory for fuzz target binaries
+#   $SRC                -- source directory
 
 cd "$SRC/klspw"
 
-# Configure with vcpkg and the OSS-Fuzz toolchain.
-# BUILD_TESTING=OFF: skip doctest targets (not needed for fuzzing).
+# Build the core library with sanitizer instrumentation but without libFuzzer main.
+# CXXFLAGS already contains -fsanitize=fuzzer-no-link from the base image.
+# Do NOT pass -fsanitize=fuzzer as a global linker flag -- it would conflict
+# with main() in the klspw executable.
 cmake -S . -B build/fuzz \
   -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="$CC" \
+  -DCMAKE_CXX_COMPILER="$CXX" \
   -DCMAKE_CXX_STANDARD=23 \
   -DCMAKE_CXX_STANDARD_REQUIRED=ON \
   -DCMAKE_CXX_EXTENSIONS=OFF \
   -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-  -DBUILD_TESTING=OFF \
   -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
-  -DCMAKE_EXE_LINKER_FLAGS="$LIB_FUZZING_ENGINE"
+  -DBUILD_TESTING=OFF
 
-cmake --build build/fuzz --parallel
+# Build only the static library (not the klspw executable which has its own main).
+cmake --build build/fuzz --target klspw_lib --parallel
 
-# Build each fuzz target manually, linking against the static library and libFuzzer.
-INCLUDES="-Iinclude -Ibuild/fuzz/generated -isystem build/fuzz/vcpkg_installed/x64-linux/include"
-LIBS="build/fuzz/libklspw_lib.a"
-VCPKG_LIBS="build/fuzz/vcpkg_installed/x64-linux/lib"
-
+# Link each fuzz target against the instrumented library and libFuzzer.
 for fuzz_src in fuzz/fuzz_*.cpp; do
   target_name=$(basename "${fuzz_src%.cpp}")
-  $CXX $CXXFLAGS -std=c++23 $INCLUDES \
-    "$fuzz_src" \
-    $LIBS \
-    -L"$VCPKG_LIBS" -lglaze -lspdlog -lfmt -lreproc -lreproc++ -lCLI11 \
+  $CXX $CXXFLAGS -std=c++23 \
+    -Iinclude \
+    -Ibuild/fuzz/generated \
+    -isystem build/fuzz/vcpkg_installed/x64-linux/include \
+    -c "$fuzz_src" \
+    -o "build/fuzz/${target_name}.o"
+
+  $CXX $CXXFLAGS \
+    "build/fuzz/${target_name}.o" \
+    build/fuzz/libklspw_lib.a \
+    -Lbuild/fuzz/vcpkg_installed/x64-linux/lib \
+    -lspdlog -lfmt -lreproc++ -lreproc \
     $LIB_FUZZING_ENGINE \
+    -lstdc++ -lm \
     -o "$OUT/$target_name"
 done
