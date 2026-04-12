@@ -56,6 +56,19 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ENABLE_SANITIZERS": "ON"
       }
+    },
+    {
+      "name": "fuzz",
+      "inherits": "base",
+      "displayName": "Fuzz",
+      "description": "Fuzz targets with libFuzzer + ASan (requires Homebrew LLVM)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
+        "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++",
+        "ENABLE_FUZZING": "ON",
+        "BUILD_TESTING": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -74,6 +87,10 @@
     {
       "name": "sanitize",
       "configurePreset": "sanitize"
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz"
     }
   ],
   "testPresets": [

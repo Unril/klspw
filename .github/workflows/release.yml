@@ -74,7 +74,8 @@ jobs:
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json',
+          key:
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-${{ hashFiles('vcpkg.json',
             '**/CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-

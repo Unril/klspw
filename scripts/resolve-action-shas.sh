@@ -20,12 +20,12 @@ resolve_sha() {
 
 latest_tags() {
   local repo=$1 count=$2
-  git ls-remote --tags "https://github.com/${repo}.git" 'refs/tags/v*' 2>/dev/null \
-    | grep -v '\^{}' \
-    | sed 's|.*refs/tags/||' \
-    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-    | sort -rV \
-    | head -"$count"
+  git ls-remote --tags "https://github.com/${repo}.git" 'refs/tags/v*' 2>/dev/null |
+    grep -v '\^{}' |
+    sed 's|.*refs/tags/||' |
+    grep -E '^v[0-9]+(\.[0-9]+)*$' |
+    sort -rV |
+    head -"$count"
 }
 
 print_action() {
@@ -41,7 +41,7 @@ print_action() {
     local sha
     sha=$(resolve_sha "$repo" "$tag")
     printf "  uses: %-50s # %s\n" "${repo}@${sha}" "$tag"
-  done <<< "$tags"
+  done <<<"$tags"
   echo
 }
 
@@ -49,22 +49,22 @@ print_action() {
 scan_workflows() {
   echo "=== Currently pinned in .github/workflows/ ==="
   echo
-  rg --no-heading --no-filename -oN 'uses: ([^@]+)@\S+ # (.+)' .github/workflows/ -r '$1  $2' \
-    | sort -u \
-    | while IFS= read -r line; do
-        local action version
-        action=$(echo "$line" | awk '{print $1}')
-        version=$(echo "$line" | awk '{print $2}')
-        printf "  %-50s %s\n" "$action" "$version"
-      done
+  rg --no-heading --no-filename -oN 'uses: ([^@]+)@\S+ # (.+)' .github/workflows/ -r '$1  $2' |
+    sort -u |
+    while IFS= read -r line; do
+      local action version
+      action=$(echo "$line" | awk '{print $1}')
+      version=$(echo "$line" | awk '{print $2}')
+      printf "  %-50s %s\n" "$action" "$version"
+    done
   echo
 }
 
 # Discover unique action repos from workflows.
 discover_actions() {
-  rg --no-heading --no-filename -oN 'uses: ([^@]+)@' .github/workflows/ -r '$1' \
-    | sed 's|/init$||; s|/analyze$||; s|/upload-sarif$||' \
-    | sort -u
+  rg --no-heading --no-filename -oN 'uses: ([^@]+)@' .github/workflows/ -r '$1' |
+    sed 's|/init$||; s|/analyze$||; s|/upload-sarif$||' |
+    sort -u
 }
 
 count=1

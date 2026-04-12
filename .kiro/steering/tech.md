@@ -12,8 +12,9 @@
 - Ninja generator
 - vcpkg manifest mode for dependency management (`vcpkg.json`)
 - `just` task runner wrapping CMake commands (`justfile`)
-- Presets: `dev` (Debug), `release` (Release), `sanitize` (Debug + ASan/UBSan), `coverage` (Debug + clang coverage)
+- Presets: `dev` (Debug), `release` (Release), `sanitize` (Debug + ASan/UBSan), `coverage` (Debug + clang coverage), `fuzz` (Release + libFuzzer/ASan, requires Clang)
 - ccache enabled automatically when available
+- GCC 15 required on Linux (ubuntu-toolchain-r/test PPA) for full C++23 library support
 
 ## Dependencies
 
@@ -27,10 +28,13 @@ All managed via vcpkg:
 
 ## Code formatting
 
-- `.clang-format` based on LLVM style
-- 120 column limit, 4-space indent
+- `.clang-format` based on LLVM style for C++ (120 columns, 4-space indent)
+- `.gersemirc` for CMake formatting via [gersemi](https://github.com/BlankSpruce/gersemi) (120 columns)
+- [prettier](https://prettier.io/) for YAML and JSON files
+- [shfmt](https://github.com/mvdan/sh) for shell scripts (2-space indent)
 - Pointer/reference alignment: left (`int* p`, `int& r`)
 - Include sorting: system headers first, then library headers, then project headers
+- `just format` runs all formatters
 
 ## Common commands
 
@@ -57,6 +61,10 @@ just release        # configure + build + test with release preset
 # Sanitizer build (ASan + UBSan, separate build dir)
 just sanitize
 
+# Fuzzing (requires Clang with libFuzzer)
+just fuzz                              # build + run fuzz_config_yaml for 60s
+just fuzz fuzz_gradle_output 120       # run specific target for 120s
+
 # Coverage
 just coverage       # build + run + merge + report + html
 ```
@@ -74,6 +82,14 @@ just coverage       # build + run + merge + report + html
 # Integration tests
 just integration    # configure with flag + build + run integration label
 ```
+
+## Fuzzing
+
+- Local: libFuzzer + ASan via `just fuzz` (requires Clang, `ENABLE_FUZZING` CMake option)
+- CI: ClusterFuzzLite on PRs via `.github/workflows/fuzzing.yml`
+- Fuzz targets in `fuzz/` directory, one per entry point
+- Corpus stored in `fuzz/corpus/` (gitignored, built up over runs)
+- ClusterFuzzLite build integration in `.clusterfuzzlite/` (Dockerfile, build.sh, project.yaml)
 
 ## Serialization conventions
 

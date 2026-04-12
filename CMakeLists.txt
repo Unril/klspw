@@ -33,24 +33,29 @@ configure_file(
 # --- Core library ---
 
 add_library(klspw_lib STATIC src/strings.cpp src/files.cpp)
-target_include_directories(klspw_lib PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_BINARY_DIR}/generated
-)
+target_include_directories(klspw_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_compile_features(klspw_lib PUBLIC cxx_std_23)
 
 if(MSVC)
     target_compile_options(klspw_lib PUBLIC /W4 /permissive-)
 else()
-    target_compile_options(klspw_lib PUBLIC -Wall -Wextra -Wpedantic)
+    target_compile_options(
+        klspw_lib
+        PUBLIC
+            -Wall
+            -Wextra
+            -Wpedantic
+            # GCC 15 is overly strict about partial aggregate initialization
+            # (designated initializers that leave optional fields at their defaults).
+            -Wno-missing-field-initializers
+    )
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # GCC 15 false positives inside <bits/basic_string.h>.
+        target_compile_options(klspw_lib PUBLIC -Wno-maybe-uninitialized)
+    endif()
 endif()
 
-target_link_libraries(klspw_lib PUBLIC
-    CLI11::CLI11
-    glaze::glaze
-    reproc++
-    spdlog::spdlog
-)
+target_link_libraries(klspw_lib PUBLIC CLI11::CLI11 glaze::glaze reproc++ spdlog::spdlog)
 
 # --- Optional instrumentation (interface targets) ---
 
@@ -74,10 +79,7 @@ endif()
 # --- Main executable ---
 
 add_executable(klspw src/main.cpp)
-target_link_libraries(klspw PRIVATE
-    klspw_lib
-    $<$<BOOL:${ENABLE_SANITIZERS}>:klspw_sanitizers>
-)
+target_link_libraries(klspw PRIVATE klspw_lib $<$<BOOL:${ENABLE_SANITIZERS}>:klspw_sanitizers>)
 set_target_properties(klspw PROPERTIES OUTPUT_NAME klspw)
 install(TARGETS klspw RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -95,31 +97,58 @@ if(BUILD_TESTING)
             return()
         endif()
         add_executable(${target} ${source})
-        target_link_libraries(${target} PRIVATE
-            klspw_lib
-            doctest::doctest
-            $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
-            $<$<BOOL:${ENABLE_SANITIZERS}>:klspw_sanitizers>
+        target_link_libraries(
+            ${target}
+            PRIVATE
+                klspw_lib
+                doctest::doctest
+                $<$<BOOL:${ENABLE_COVERAGE}>:klspw_coverage>
+                $<$<BOOL:${ENABLE_SANITIZERS}>:klspw_sanitizers>
         )
         target_compile_definitions(${target} PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
         add_test(NAME ${target} COMMAND ${target})
-        set_tests_properties(${target} PROPERTIES
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            ${ARGN}
-        )
+        set_tests_properties(${target} PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" ${ARGN})
     endfunction()
 
-    klspw_add_test(klspw_tests           test/smoke.cpp)
-    klspw_add_test(config_test           test/config_test.cpp)
-    klspw_add_test(gradle_test           test/gradle_test.cpp)
-    klspw_add_test(workspace_json_test   test/workspace_json_test.cpp)
-    klspw_add_test(common_test           test/common_test.cpp)
-    klspw_add_test(process_test          test/process_test.cpp)
-    klspw_add_test(config_validate_test  test/config_validate_test.cpp)
-    klspw_add_test(config_save_test      test/config_save_test.cpp)
-    klspw_add_test(sources_test          test/sources_test.cpp)
+    klspw_add_test(klspw_tests test/smoke.cpp)
+    klspw_add_test(config_test test/config_test.cpp)
+    klspw_add_test(gradle_test test/gradle_test.cpp)
+    klspw_add_test(workspace_json_test test/workspace_json_test.cpp)
+    klspw_add_test(common_test test/common_test.cpp)
+    klspw_add_test(process_test test/process_test.cpp)
+    klspw_add_test(config_validate_test test/config_validate_test.cpp)
+    klspw_add_test(config_save_test test/config_save_test.cpp)
+    klspw_add_test(sources_test test/sources_test.cpp)
 
     if(ENABLE_INTEGRATION_TESTS)
-        klspw_add_test(integration_test  test/integration_test.cpp  LABELS "integration")
+        klspw_add_test(integration_test test/integration_test.cpp LABELS "integration")
     endif()
+endif()
+
+# --- Fuzz targets (local libFuzzer, requires Clang) ---
+# Library code is compiled with fuzzer-no-link (instrumentation only).
+# Fuzz executables link with -fsanitize=fuzzer (pulls in libFuzzer's main).
+
+option(ENABLE_FUZZING "Build fuzz targets with libFuzzer + ASan" OFF)
+if(ENABLE_FUZZING)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "ENABLE_FUZZING requires Clang (libFuzzer)")
+    endif()
+
+    add_library(klspw_fuzzing INTERFACE)
+    target_compile_options(klspw_fuzzing INTERFACE -fsanitize=fuzzer-no-link,address -fno-omit-frame-pointer -g -O1)
+    target_link_options(klspw_fuzzing INTERFACE -fsanitize=address)
+
+    # Instrument the core library for fuzzer coverage feedback.
+    target_link_libraries(klspw_lib PUBLIC $<$<BOOL:${ENABLE_FUZZING}>:klspw_fuzzing>)
+
+    function(klspw_add_fuzzer target source)
+        add_executable(${target} ${source})
+        target_link_libraries(${target} PRIVATE klspw_lib)
+        target_compile_options(${target} PRIVATE -fsanitize=fuzzer,address)
+        target_link_options(${target} PRIVATE -fsanitize=fuzzer,address)
+    endfunction()
+
+    klspw_add_fuzzer(fuzz_config_yaml fuzz/fuzz_config_yaml.cpp)
+    klspw_add_fuzzer(fuzz_gradle_output fuzz/fuzz_gradle_output.cpp)
 endif()

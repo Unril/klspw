@@ -113,23 +113,23 @@ struct SourceSet {
         vector<LibraryRootData> roots{{.path = string{jar}}};
         // Prefer Gradle-resolved source jar, fall back to filesystem discovery.
         if (auto it = source_classpath.find(string{jar}); it != source_classpath.end()) {
-            roots.push_back({.path = it->second, .type = root_type_sources});
+            roots.push_back({.path = it->second, .type = string(root_type_sources)});
         } else if (auto src = SourceResolver{jar}.find()) {
-            roots.push_back({.path = std::move(*src), .type = root_type_sources});
+            roots.push_back({.path = std::move(*src), .type = string(root_type_sources)});
         }
-        return {.name = file_stem(jar), .type = library_type_imported, .roots = std::move(roots)};
+        return {.name = file_stem(jar), .type = string(library_type_imported), .roots = std::move(roots)};
     }
 
     /// Build a LibraryData without source attachment. Type "java-imported" is required by kotlin-lsp.
     static LibraryData library_from_jar(string_view jar) {
-        return {.name = file_stem(jar), .type = library_type_imported, .roots = {{.path = string{jar}}}};
+        return {.name = file_stem(jar), .type = string(library_type_imported), .roots = {{.path = string{jar}}}};
     }
 
     /// Convert source_roots into typed SourceRootData entries.
     /// Resource dirs are excluded from the source pass and added separately as resource-type roots.
     vector<SourceRootData> to_source_roots() const {
-        const auto src_type = is_test() ? source_type_test : source_type_java;
-        const auto res_type = is_test() ? source_type_test_resource : source_type_resource;
+        const auto src_type = string(is_test() ? source_type_test : source_type_java);
+        const auto res_type = string(is_test() ? source_type_test_resource : source_type_resource);
         auto to_src = [&](const auto& p) -> SourceRootData { return {.path = p, .type = src_type}; };
         auto to_res = [&](const auto& p) -> SourceRootData { return {.path = p, .type = res_type}; };
         // Exclude resource dirs from source pass -- they're added below as resource-type roots.

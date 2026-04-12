@@ -18,18 +18,18 @@
 namespace klspw {
 
 /// Library/SDK root type constants used in LibraryRootData and SdkRootData.
-inline const string root_type_classes = "CLASSES";
-inline const string root_type_sources = "SOURCES";
-inline const string root_type_javadoc = "JAVADOC";
+inline constexpr auto root_type_classes = "CLASSES"sv;
+inline constexpr auto root_type_sources = "SOURCES"sv;
+inline constexpr auto root_type_javadoc = "JAVADOC"sv;
 
 /// Source root type constants used in SourceRootData.
-inline const string source_type_java = "java-source";
-inline const string source_type_test = "java-test";
-inline const string source_type_resource = "java-resource";
-inline const string source_type_test_resource = "java-test-resource";
+inline constexpr auto source_type_java = "java-source"sv;
+inline constexpr auto source_type_test = "java-test"sv;
+inline constexpr auto source_type_resource = "java-resource"sv;
+inline constexpr auto source_type_test_resource = "java-test-resource"sv;
 
 /// Library type constant used in LibraryData.
-inline const string library_type_imported = "java-imported";
+inline constexpr auto library_type_imported = "java-imported"sv;
 
 enum class DependencyScope : uint8_t { compile, test, runtime, provided };
 
@@ -190,7 +190,7 @@ struct ModuleData {
 /// A single JAR or directory within a library's classpath.
 struct LibraryRootData {
     string path; ///< JAR file or directory path.
-    string type = root_type_classes;
+    string type = string(root_type_classes);
     string inclusion_options =
         "root_itself"; ///< "root_itself", "archives_under_root", "archives_under_root_recursively".
 

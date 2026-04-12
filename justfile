@@ -30,9 +30,26 @@ install prefix="/usr/local":
     just release
     cmake --install build/release --prefix {{ prefix }}
 
-# Format all C++ source and header files with clang-format
+# Format all C++ source and header files with clang-format, CMake files with gersemi
 format:
-    find include src test -name '*.hpp' -o -name '*.cpp' | xargs clang-format -i
+    find include src test fuzz -name '*.hpp' -o -name '*.cpp' | xargs clang-format -i
+    gersemi -i CMakeLists.txt
+    prettier --write '.github/**/*.yml' '.clusterfuzzlite/*.yaml' 'CMakePresets.json'
+    shfmt -w -i 2 scripts/ .clusterfuzzlite/build.sh
+
+# Fuzz targets (requires Clang, uses libFuzzer + ASan)
+fuzz-build:
+    cmake --preset fuzz
+    cmake --build --preset fuzz
+
+# Run a fuzz target for 60 seconds (default: fuzz_config_yaml)
+fuzz target="fuzz_config_yaml" seconds="60": fuzz-build
+    mkdir -p fuzz/corpus/{{ target }}
+    ./build/fuzz/{{ target }} fuzz/corpus/{{ target }} \
+        -max_total_time={{ seconds }} \
+        -print_final_stats=1 \
+        -print_corpus_stats=0 \
+        -verbosity=0
 
 # Integration tests (requires Gradle on PATH)
 integration-configure:

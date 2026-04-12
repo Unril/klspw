@@ -4,6 +4,7 @@ CompileFlags:
 
 Diagnostics:
   ClangTidy:
+    # see https://clang.llvm.org/extra/clang-tidy/checks/list.html
     Add:
       - bugprone-*
       - cert-*
@@ -22,11 +23,10 @@ Diagnostics:
       - modernize-use-nodiscard
       # cppcoreguidelines noise -- overlaps with bugprone or too strict for header-only
       - cppcoreguidelines-avoid-magic-numbers # alias of readability-magic-numbers
-      - cppcoreguidelines-non-private-member-variables-in-classes # we use public structs for DTOs
-      - cppcoreguidelines-pro-bounds-array-to-pointer-decay # triggers on doctest macros
+      - cppcoreguidelines-non-private-member-variables-in-classes # we use public structs for DTOs      
       - cppcoreguidelines-owning-memory # triggers on test framework macros
       - cppcoreguidelines-avoid-do-while # style preference, not a bug
-      - cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+      - cppcoreguidelines-pro-bounds-*
       # misc noise
       - misc-non-private-member-variables-in-classes # alias of cppcoreguidelines variant
       - misc-no-recursion # we don't have recursion issues

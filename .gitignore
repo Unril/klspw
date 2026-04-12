@@ -28,3 +28,6 @@ tmp_*.txt
 !.env.example
 *.pem
 *.key
+
+# Fuzz corpus (generated at runtime)
+fuzz/corpus/

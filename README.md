@@ -1,10 +1,11 @@
 # klspw
 
 [![CI](https://github.com/Unril/klspw/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Unril/klspw?sort=semver)](https://github.com/Unril/klspw/releases)
-[![License](https://img.shields.io/github/license/Unril/klspw)](./LICENSE)
 [![CodeQL](https://github.com/Unril/klspw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Unril/klspw/badge)](https://scorecard.dev/viewer/?uri=github.com/Unril/klspw)
+[![License](https://img.shields.io/github/license/Unril/klspw)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/Unril/klspw?sort=semver)](https://github.com/Unril/klspw/releases)
+
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon%20%7C%20Intel-black)](https://github.com/Unril/klspw)
 [![Linux](https://img.shields.io/badge/Linux-x86__64-black)](https://github.com/Unril/klspw)
 
@@ -167,6 +168,11 @@ test/
   integration_test.cpp  # end-to-end tests with real Gradle projects
 resources/
   init.gradle.kts       # Gradle init script (embedded at build time)
+fuzz/
+  fuzz_config_yaml.cpp  # fuzz target for YAML config parsing
+  fuzz_gradle_output.cpp # fuzz target for Gradle output parsing
+scripts/
+  resolve-action-shas.sh # resolve GitHub Actions tags to commit SHAs
 ```
 
 ## Build
@@ -180,6 +186,13 @@ just release     # configure + build + test with release preset
 just sanitize    # ASan + UBSan build and test
 just install     # release build + install to /usr/local
 just install /opt/klspw  # install to custom prefix
+
+# Fuzzing (requires Clang with libFuzzer)
+just fuzz                              # build + run fuzz_config_yaml for 60s
+just fuzz fuzz_gradle_output 120       # specific target, 120s
+
+# Format all source files
+just format
 
 # Integration tests (requires Gradle on PATH)
 just integration
@@ -214,6 +227,8 @@ GitHub Actions workflows automate building, testing, security scanning, and rele
 `dependency-review.yml` runs on pull requests and flags newly introduced vulnerable dependencies or license violations.
 
 `scorecard.yml` runs the [OpenSSF Scorecard](https://scorecard.dev) analysis weekly and on pushes to `master`, publishing results to the code scanning dashboard.
+
+`fuzzing.yml` runs [ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) on pull requests, fuzzing the YAML config parser and Gradle output parser with AddressSanitizer for 5 minutes per run.
 
 Homebrew bottles (prebuilt binaries) are built separately by the [homebrew-tap] repo's own CI workflows using `brew test-bot`.
 

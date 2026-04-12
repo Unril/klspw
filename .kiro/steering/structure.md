@@ -18,8 +18,11 @@ klspw/
   test/              # One test binary per file, shared RAII fixtures in a common header
     fixtures/        # Test data (YAML configs, JSON outputs)
       projects/      # Real Gradle projects for integration tests (simple, with-deps, multi, multi-root)
+  fuzz/              # libFuzzer fuzz targets (one per entry point)
+  scripts/           # Utility scripts (resolve-action-shas.sh)
   resources/
     init.gradle.kts  # Gradle init script (embedded at build time via configure_file)
+  .clusterfuzzlite/  # ClusterFuzzLite CI build integration (Dockerfile, build.sh)
 ```
 
 ## Architecture
