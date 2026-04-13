@@ -3,12 +3,12 @@
 /// Shared type aliases, namespace imports, glaze opts, and preconditions.
 
 #include <cstddef>
-#include <cstdint> // IWYU pragma: keep
-#include <filesystem> // IWYU pragma: keep
+#include <cstdint>  // IWYU pragma: keep
+#include <filesystem>  // IWYU pragma: keep
 #include <format>
 #include <functional>
 #include <optional>
-#include <ranges> // IWYU pragma: keep (namespace aliases r, v)
+#include <ranges>  // IWYU pragma: keep (namespace aliases r, v)
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -49,6 +49,10 @@ using opt_string = optional<string>;
 using string_set = std::unordered_set<string>;
 using string_views = std::span<const std::string_view>;
 
+using fs::path;
+using opt_path = optional<path>;
+using paths = vector<path>;
+
 /// Ordered map with O(1) lookup and deterministic iteration order.
 /// Used for all string-keyed maps in model types (serialized to JSON objects).
 template <typename V>
@@ -56,11 +60,12 @@ using string_map = glz::ordered_map<string, V>;
 
 // --- Glaze opts ---
 
-/// Write opts: write null optionals as null (kotlin-lsp requires them), pretty-print for diffable output.
+/// Write opts: write null optionals as null (kotlin-lsp requires them), pretty-print for diffable
+/// output.
 struct ws_write_opts_t : glz::opts {
-    bool skip_null_members = false;
-    bool prettify = true;
-    uint8_t indentation_width = 2;
+  bool skip_null_members = false;
+  bool prettify = true;
+  uint8_t indentation_width = 2;
 };
 
 inline constexpr ws_write_opts_t ws_write_opts{};
@@ -74,35 +79,35 @@ namespace detail {
 
 /// Evaluate an argument for formatting:
 ///   - invocable with no args → std::invoke and return result
-///   - fs::path → .string() (no std::formatter for fs::path)
+///   - path → .string() (no std::formatter for path)
 ///   - std::error_code → .message() (no std::formatter for error_code)
 ///   - anything else → pass through by value
 template <typename T>
 auto eval(T&& arg) {
-    if constexpr (std::invocable<T>) {
-        return std::invoke(std::forward<T>(arg));
-    } else if constexpr (std::same_as<std::remove_cvref_t<T>, fs::path>) {
-        return arg.string();
-    } else if constexpr (std::same_as<std::remove_cvref_t<T>, std::error_code>) {
-        return arg.message();
-    } else {
-        return std::forward<T>(arg);
-    }
+  if constexpr (std::invocable<T>) {
+    return std::invoke(std::forward<T>(arg));
+  } else if constexpr (std::same_as<std::remove_cvref_t<T>, path>) {
+    return arg.string();
+  } else if constexpr (std::same_as<std::remove_cvref_t<T>, std::error_code>) {
+    return arg.message();
+  } else {
+    return std::forward<T>(arg);
+  }
 }
 
 /// The type that eval() produces for a given arg, decayed for use in format_string.
 template <typename T>
 using eval_t = std::remove_cvref_t<decltype(eval(std::declval<T>()))>;
 
-} // namespace detail
+}  // namespace detail
 
 /// Throw runtime_error if condition is false. Accepts std::format args.
-/// Args may be values, zero-arg callables, fs::path, or error_code (all handled by detail::eval).
+/// Args may be values, zero-arg callables, path, or error_code (all handled by detail::eval).
 template <typename... Args>
 inline void require(bool condition, std::format_string<detail::eval_t<Args>...> fmt, Args&&... args) {
-    if (!condition) {
-        throw runtime_error(format(fmt, detail::eval(std::forward<Args>(args))...));
-    }
+  if (!condition) {
+    throw runtime_error(format(fmt, detail::eval(std::forward<Args>(args))...));
+  }
 }
 
-} // namespace klspw
+}  // namespace klspw

@@ -9,335 +9,333 @@ namespace {
 
 template <typename T>
 std::string to_json(const T& val) {
-    auto result = glz::write_json(val);
-    REQUIRE(result.has_value());
-    return result.value();
+  auto result = glz::write_json(val);
+  REQUIRE(result.has_value());
+  return result.value();
 }
 
 template <typename T>
 T from_json(const std::string& json_str) {
-    auto result = glz::read_json<T>(json_str);
-    REQUIRE(result.has_value());
-    return result.value();
+  auto result = glz::read_json<T>(json_str);
+  REQUIRE(result.has_value());
+  return result.value();
 }
 
 void assert_round_trip(const std::string& path) {
-    const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file(path));
-    const auto json1 = to_json(ws);
-    REQUIRE_FALSE(json1.empty());
-    const auto json2 = to_json(from_json<klspw::WorkspaceData>(json1));
-    CHECK(json1 == json2);
+  const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file(path));
+  const auto json1 = to_json(ws);
+  REQUIRE_FALSE(json1.empty());
+  const auto json2 = to_json(from_json<klspw::WorkspaceData>(json1));
+  CHECK(json1 == json2);
 }
 
-} // namespace
+}  // namespace
 
 TEST_CASE("round-trip root workspace") { assert_round_trip("test/fixtures/example_root_workspace.json"); }
+
 TEST_CASE("round-trip proj workspace") { assert_round_trip("test/fixtures/example_proj_workspace.json"); }
 
 TEST_CASE("root workspace structure") {
-    const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file("test/fixtures/example_root_workspace.json"));
+  const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file("test/fixtures/example_root_workspace.json"));
 
-    CHECK_FALSE(ws.modules.empty());
-    CHECK_FALSE(ws.libraries.empty());
-    CHECK(ws.sdks.empty());
-    CHECK_FALSE(ws.kotlin_settings.empty());
-    CHECK(ws.java_settings.empty());
+  CHECK_FALSE(ws.modules.empty());
+  CHECK_FALSE(ws.libraries.empty());
+  CHECK(ws.sdks.empty());
+  CHECK_FALSE(ws.kotlin_settings.empty());
+  CHECK(ws.java_settings.empty());
 
-    SUBCASE("module") {
-        const auto& m = ws.modules[0];
-        CHECK(m.name == "MyKotlinService-1.0");
-        CHECK(m.type == "JAVA_MODULE");
-        CHECK_FALSE(m.dependencies.empty());
-        CHECK_FALSE(m.content_roots.empty());
-    }
+  SUBCASE("module") {
+    const auto& m = ws.modules[0];
+    CHECK(m.name == "MyKotlinService-1.0");
+    CHECK(m.type == "JAVA_MODULE");
+    CHECK_FALSE(m.dependencies.empty());
+    CHECK_FALSE(m.content_roots.empty());
+  }
 
-    SUBCASE("dependencies contain library and inheritedSdk") {
-        const auto& deps = ws.modules[0].dependencies;
-        CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::LibraryDep>(d); }));
-        CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::InheritedSdk>(d); }));
-        CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::ModuleSource>(d); }));
-    }
+  SUBCASE("dependencies contain library and inheritedSdk") {
+    const auto& deps = ws.modules[0].dependencies;
+    CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::LibraryDep>(d); }));
+    CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::InheritedSdk>(d); }));
+    CHECK(std::ranges::any_of(deps, [](const auto& d) { return std::holds_alternative<klspw::ModuleSource>(d); }));
+  }
 
-    SUBCASE("library") {
-        const auto& lib = ws.libraries[0];
-        CHECK_FALSE(lib.name.empty());
-        CHECK_FALSE(lib.roots.empty());
-        CHECK(lib.type.has_value());
-    }
+  SUBCASE("library") {
+    const auto& lib = ws.libraries[0];
+    CHECK_FALSE(lib.name.empty());
+    CHECK_FALSE(lib.roots.empty());
+    CHECK(lib.type.has_value());
+  }
 
-    SUBCASE("kotlin settings") {
-        const auto& ks = ws.kotlin_settings[0];
-        CHECK(ks.name == "Kotlin");
-        CHECK_FALSE(ks.module.empty());
-        CHECK(ks.version == 5);
-        CHECK(ks.kind == "default");
-        CHECK(ks.compiler_arguments.has_value());
-        CHECK(ks.compiler_arguments->contains("jvmTarget"));
-    }
+  SUBCASE("kotlin settings") {
+    const auto& ks = ws.kotlin_settings[0];
+    CHECK(ks.name == "Kotlin");
+    CHECK_FALSE(ks.module.empty());
+    CHECK(ks.version == 5);
+    CHECK(ks.kind == "default");
+    CHECK(ks.compiler_arguments.has_value());
+    CHECK(ks.compiler_arguments->contains("jvmTarget"));
+  }
 }
 
 TEST_CASE("proj workspace structure") {
-    const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file("test/fixtures/example_proj_workspace.json"));
+  const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file("test/fixtures/example_proj_workspace.json"));
 
-    CHECK_FALSE(ws.modules.empty());
-    CHECK_FALSE(ws.libraries.empty());
-    CHECK(ws.sdks.empty());
-    CHECK(ws.kotlin_settings.empty());
+  CHECK_FALSE(ws.modules.empty());
+  CHECK_FALSE(ws.libraries.empty());
+  CHECK(ws.sdks.empty());
+  CHECK(ws.kotlin_settings.empty());
 
-    SUBCASE("module has type") { CHECK(ws.modules[0].type == "JAVA_MODULE"); }
+  SUBCASE("module has type") { CHECK(ws.modules[0].type == "JAVA_MODULE"); }
 
-    SUBCASE("library has level") { CHECK(ws.libraries[0].level == "project"); }
+  SUBCASE("library has level") { CHECK(ws.libraries[0].level == "project"); }
 
-    SUBCASE("library root has inclusion_options") {
-        using std::ranges::any_of;
-        const bool found = any_of(ws.libraries, [](const auto& lib) {
-            return any_of(lib.roots, [](const auto& root) { return root.inclusion_options == "root_itself"; });
-        });
-        CHECK(found);
-    }
+  SUBCASE("library root has inclusion_options") {
+    using std::ranges::any_of;
+    const bool found = any_of(ws.libraries, [](const auto& lib) {
+      return any_of(lib.roots, [](const auto& root) { return root.inclusion_options == "root_itself"; });
+    });
+    CHECK(found);
+  }
 }
 
 TEST_CASE("DependencyScope round-trips") {
-    for (auto scope : {klspw::DependencyScope::compile,
-             klspw::DependencyScope::test,
-             klspw::DependencyScope::runtime,
-             klspw::DependencyScope::provided}) {
-        CAPTURE(scope);
-        CHECK(from_json<klspw::DependencyScope>(to_json(scope)) == scope);
-    }
+  for (auto scope : {klspw::DependencyScope::compile, klspw::DependencyScope::test, klspw::DependencyScope::runtime,
+                     klspw::DependencyScope::provided}) {
+    CAPTURE(scope);
+    CHECK(from_json<klspw::DependencyScope>(to_json(scope)) == scope);
+  }
 }
 
 TEST_CASE("DependencyData variant round-trips") {
-    SUBCASE("library") {
-        const klspw::DependencyData d = klspw::LibraryDep{.name = "guava"};
-        const auto json_str = to_json(d);
-        CHECK(json_str.contains("\"type\":\"library\""));
-        CHECK(std::get<klspw::LibraryDep>(from_json<klspw::DependencyData>(json_str)).name == "guava");
-    }
+  SUBCASE("library") {
+    const klspw::DependencyData d = klspw::LibraryDep{.name = "guava"};
+    const auto json_str = to_json(d);
+    CHECK(json_str.contains("\"type\":\"library\""));
+    CHECK(std::get<klspw::LibraryDep>(from_json<klspw::DependencyData>(json_str)).name == "guava");
+  }
 
-    SUBCASE("inheritedSdk") {
-        const auto json_str = to_json(klspw::DependencyData{klspw::InheritedSdk{}});
-        CHECK(json_str.contains("\"type\":\"inheritedSdk\""));
-        CHECK(std::holds_alternative<klspw::InheritedSdk>(from_json<klspw::DependencyData>(json_str)));
-    }
+  SUBCASE("inheritedSdk") {
+    const auto json_str = to_json(klspw::DependencyData{klspw::InheritedSdk{}});
+    CHECK(json_str.contains("\"type\":\"inheritedSdk\""));
+    CHECK(std::holds_alternative<klspw::InheritedSdk>(from_json<klspw::DependencyData>(json_str)));
+  }
 
-    SUBCASE("moduleSource") {
-        const auto json_str = to_json(klspw::DependencyData{klspw::ModuleSource{}});
-        CHECK(json_str.contains("\"type\":\"moduleSource\""));
-        CHECK(std::holds_alternative<klspw::ModuleSource>(from_json<klspw::DependencyData>(json_str)));
-    }
+  SUBCASE("moduleSource") {
+    const auto json_str = to_json(klspw::DependencyData{klspw::ModuleSource{}});
+    CHECK(json_str.contains("\"type\":\"moduleSource\""));
+    CHECK(std::holds_alternative<klspw::ModuleSource>(from_json<klspw::DependencyData>(json_str)));
+  }
 }
 
 TEST_CASE("ModuleDep round-trips") {
-    const klspw::DependencyData d =
-        klspw::ModuleDep{.name = "core", .scope = klspw::DependencyScope::test, .isExported = true, .isTestJar = true};
-    const auto json_str = to_json(d);
-    CHECK(json_str.contains("\"type\":\"module\""));
+  const klspw::DependencyData d =
+      klspw::ModuleDep{.name = "core", .scope = klspw::DependencyScope::test, .isExported = true, .isTestJar = true};
+  const auto json_str = to_json(d);
+  CHECK(json_str.contains("\"type\":\"module\""));
 
-    const auto parsed = from_json<klspw::DependencyData>(json_str);
-    const auto& m = std::get<klspw::ModuleDep>(parsed);
-    CHECK(m.name == "core");
-    CHECK(m.scope == klspw::DependencyScope::test);
-    CHECK(m.isExported);
-    CHECK(m.isTestJar);
+  const auto parsed = from_json<klspw::DependencyData>(json_str);
+  const auto& m = std::get<klspw::ModuleDep>(parsed);
+  CHECK(m.name == "core");
+  CHECK(m.scope == klspw::DependencyScope::test);
+  CHECK(m.isExported);
+  CHECK(m.isTestJar);
 }
 
 TEST_CASE("SdkDep round-trips") {
-    const klspw::DependencyData d = klspw::SdkDep{.name = "JDK21", .kind = "JavaSDK"};
-    CHECK(std::get<klspw::SdkDep>(from_json<klspw::DependencyData>(to_json(d))).name == "JDK21");
+  const klspw::DependencyData d = klspw::SdkDep{.name = "JDK21", .kind = "JavaSDK"};
+  CHECK(std::get<klspw::SdkDep>(from_json<klspw::DependencyData>(to_json(d))).name == "JDK21");
 }
 
 TEST_CASE("XmlElement round-trips") {
-    const klspw::XmlElement elem{.tag = "root",
-        .attributes = {{"key", "val"}},
-        .children = {{.tag = "child"}},
-        .text = "hello"};
-    const auto parsed = from_json<klspw::XmlElement>(to_json(elem));
-    CHECK(parsed.tag == "root");
-    CHECK(parsed.attributes.at("key") == "val");
-    CHECK(parsed.text.value() == "hello");
-    CHECK(parsed.children[0].tag == "child");
+  const klspw::XmlElement elem{
+      .tag = "root", .attributes = {{"key", "val"}}, .children = {{.tag = "child"}}, .text = "hello"};
+  const auto parsed = from_json<klspw::XmlElement>(to_json(elem));
+  CHECK(parsed.tag == "root");
+  CHECK(parsed.attributes.at("key") == "val");
+  CHECK(parsed.text.value() == "hello");
+  CHECK(parsed.children[0].tag == "child");
 }
 
 TEST_CASE("ContentRootData round-trips") {
-    const klspw::ContentRootData cr{
-        .path = "/src",
-        .source_roots = {{.path = "/src/main", .type = "java-source"}},
-        .excluded_patterns = {"*.bak", "tmp/"},
-        .excluded_urls = {"file:///excluded"},
-    };
-    const auto parsed = from_json<klspw::ContentRootData>(to_json(cr));
-    CHECK(parsed.excluded_patterns.size() == 2);
-    CHECK(parsed.excluded_urls[0] == "file:///excluded");
+  const klspw::ContentRootData cr{
+      .path = "/src",
+      .source_roots = {{.path = "/src/main", .type = "java-source"}},
+      .excluded_patterns = {"*.bak", "tmp/"},
+      .excluded_urls = {"file:///excluded"},
+  };
+  const auto parsed = from_json<klspw::ContentRootData>(to_json(cr));
+  CHECK(parsed.excluded_patterns.size() == 2);
+  CHECK(parsed.excluded_urls[0] == "file:///excluded");
 }
 
 TEST_CASE("SdkData round-trips") {
-    const klspw::SdkData sdk{
-        .name = "JDK21",
-        .type = "JavaSDK",
-        .version = "21",
-        .home_path = "/usr/lib/jvm/java-21",
-        .roots = std::vector<klspw::SdkRootData>{{.url = "jar:///rt.jar!/", .type = "classPath"}},
-        .additional_data = "extra",
-    };
-    const auto parsed = from_json<klspw::SdkData>(to_json(sdk));
-    CHECK(parsed.version.value() == "21");
-    CHECK(parsed.roots->at(0).url == "jar:///rt.jar!/");
+  const klspw::SdkData sdk{
+      .name = "JDK21",
+      .type = "JavaSDK",
+      .version = "21",
+      .home_path = "/usr/lib/jvm/java-21",
+      .roots = std::vector<klspw::SdkRootData>{{.url = "jar:///rt.jar!/", .type = "classPath"}},
+      .additional_data = "extra",
+  };
+  const auto parsed = from_json<klspw::SdkData>(to_json(sdk));
+  CHECK(parsed.version.value() == "21");
+  CHECK(parsed.roots->at(0).url == "jar:///rt.jar!/");
 }
 
 TEST_CASE("JavaSettingsData round-trips") {
-    const klspw::JavaSettingsData js{
-        .module = "mymod",
-        .inherited_compiler_output = false,
-        .exclude_output = false,
-        .compiler_output = "/out",
-        .compiler_output_for_tests = "/test-out",
-        .language_level_id = "JDK_21",
-        .manifest_attributes = {{"Main-Class", "com.example.Main"}},
-    };
-    const auto parsed = from_json<klspw::JavaSettingsData>(to_json(js));
-    CHECK(parsed.module == "mymod");
-    CHECK_FALSE(parsed.inherited_compiler_output);
-    CHECK(parsed.compiler_output.value() == "/out");
-    CHECK(parsed.language_level_id.value() == "JDK_21");
-    CHECK(parsed.manifest_attributes.at("Main-Class") == "com.example.Main");
+  const klspw::JavaSettingsData js{
+      .module = "mymod",
+      .inherited_compiler_output = false,
+      .exclude_output = false,
+      .compiler_output = "/out",
+      .compiler_output_for_tests = "/test-out",
+      .language_level_id = "JDK_21",
+      .manifest_attributes = {{"Main-Class", "com.example.Main"}},
+  };
+  const auto parsed = from_json<klspw::JavaSettingsData>(to_json(js));
+  CHECK(parsed.module == "mymod");
+  CHECK_FALSE(parsed.inherited_compiler_output);
+  CHECK(parsed.compiler_output.value() == "/out");
+  CHECK(parsed.language_level_id.value() == "JDK_21");
+  CHECK(parsed.manifest_attributes.at("Main-Class") == "com.example.Main");
 }
 
 TEST_CASE("LibraryData with properties round-trips") {
-    const klspw::LibraryData lib{
-        .name = "mylib",
-        .type = "java-imported",
-        .roots = {{.path = "/lib.jar"}},
-        .excluded_roots = {"/excluded"},
-        .properties = klspw::XmlElement{.tag = "properties"},
-    };
-    const auto parsed = from_json<klspw::LibraryData>(to_json(lib));
-    CHECK(parsed.excluded_roots[0] == "/excluded");
-    CHECK(parsed.properties->tag == "properties");
+  const klspw::LibraryData lib{
+      .name = "mylib",
+      .type = "java-imported",
+      .roots = {{.path = "/lib.jar"}},
+      .excluded_roots = {"/excluded"},
+      .properties = klspw::XmlElement{.tag = "properties"},
+  };
+  const auto parsed = from_json<klspw::LibraryData>(to_json(lib));
+  CHECK(parsed.excluded_roots[0] == "/excluded");
+  CHECK(parsed.properties->tag == "properties");
 }
 
 // --- promote_module_deps ---
 
 TEST_CASE("promote_module_deps converts library dep to module dep") {
-    klspw::WorkspaceData ws;
-    ws.modules.push_back({.name = "CoreLib"});
-    ws.modules.push_back({.name = "App1",
-        .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .scope = klspw::DependencyScope::compile}}});
-    ws.modules.push_back({.name = "App2",
-        .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .scope = klspw::DependencyScope::test}}});
-    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib/CoreLib-1.0.jar"}}});
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back(
+      {.name = "App1",
+       .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .scope = klspw::DependencyScope::compile}}});
+  ws.modules.push_back(
+      {.name = "App2",
+       .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .scope = klspw::DependencyScope::test}}});
+  ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib/CoreLib-1.0.jar"}}});
 
-    ws.promote_module_deps();
+  ws.promote_module_deps();
 
-    // Library dep promoted to module dep in both consuming modules.
-    const auto& dep1 = ws.modules[1].dependencies[0];
-    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep1));
-    CHECK(std::get<klspw::ModuleDep>(dep1).name == "CoreLib");
-    CHECK(std::get<klspw::ModuleDep>(dep1).scope == klspw::DependencyScope::compile);
+  // Library dep promoted to module dep in both consuming modules.
+  const auto& dep1 = ws.modules[1].dependencies[0];
+  REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep1));
+  CHECK(std::get<klspw::ModuleDep>(dep1).name == "CoreLib");
+  CHECK(std::get<klspw::ModuleDep>(dep1).scope == klspw::DependencyScope::compile);
 
-    const auto& dep2 = ws.modules[2].dependencies[0];
-    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep2));
-    CHECK(std::get<klspw::ModuleDep>(dep2).name == "CoreLib");
-    CHECK(std::get<klspw::ModuleDep>(dep2).scope == klspw::DependencyScope::test);
+  const auto& dep2 = ws.modules[2].dependencies[0];
+  REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep2));
+  CHECK(std::get<klspw::ModuleDep>(dep2).name == "CoreLib");
+  CHECK(std::get<klspw::ModuleDep>(dep2).scope == klspw::DependencyScope::test);
 
-    // Library removed.
-    CHECK(ws.libraries.empty());
+  // Library removed.
+  CHECK(ws.libraries.empty());
 }
 
 TEST_CASE("promote_module_deps leaves unrelated libraries untouched") {
-    klspw::WorkspaceData ws;
-    ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "guava-33.0"}}});
-    ws.libraries.push_back({.name = "guava-33.0", .roots = {{.path = "/lib/guava-33.0.jar"}}});
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "guava-33.0"}}});
+  ws.libraries.push_back({.name = "guava-33.0", .roots = {{.path = "/lib/guava-33.0.jar"}}});
 
-    ws.promote_module_deps();
+  ws.promote_module_deps();
 
-    REQUIRE(std::holds_alternative<klspw::LibraryDep>(ws.modules[0].dependencies[0]));
-    CHECK(ws.libraries.size() == 1);
+  REQUIRE(std::holds_alternative<klspw::LibraryDep>(ws.modules[0].dependencies[0]));
+  CHECK(ws.libraries.size() == 1);
 }
 
 TEST_CASE("promote_module_deps preserves non-library deps") {
-    klspw::WorkspaceData ws;
-    ws.modules.push_back({.name = "CoreLib"});
-    ws.modules.push_back({.name = "App",
-        .dependencies = {
-            klspw::InheritedSdk{},
-            klspw::ModuleSource{},
-            klspw::LibraryDep{.name = "CoreLib-1.0"},
-        }});
-    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib/CoreLib-1.0.jar"}}});
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "App",
+                        .dependencies = {
+                            klspw::InheritedSdk{},
+                            klspw::ModuleSource{},
+                            klspw::LibraryDep{.name = "CoreLib-1.0"},
+                        }});
+  ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib/CoreLib-1.0.jar"}}});
 
-    ws.promote_module_deps();
+  ws.promote_module_deps();
 
-    CHECK(std::holds_alternative<klspw::InheritedSdk>(ws.modules[1].dependencies[0]));
-    CHECK(std::holds_alternative<klspw::ModuleSource>(ws.modules[1].dependencies[1]));
-    CHECK(std::holds_alternative<klspw::ModuleDep>(ws.modules[1].dependencies[2]));
+  CHECK(std::holds_alternative<klspw::InheritedSdk>(ws.modules[1].dependencies[0]));
+  CHECK(std::holds_alternative<klspw::ModuleSource>(ws.modules[1].dependencies[1]));
+  CHECK(std::holds_alternative<klspw::ModuleDep>(ws.modules[1].dependencies[2]));
 }
 
 TEST_CASE("promote_module_deps handles multi-dash module names") {
-    klspw::WorkspaceData ws;
-    ws.modules.push_back({.name = "My-Cool-Lib"});
-    ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "My-Cool-Lib-2.3.1"}}});
-    ws.libraries.push_back({.name = "My-Cool-Lib-2.3.1", .roots = {{.path = "/lib.jar"}}});
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "My-Cool-Lib"});
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "My-Cool-Lib-2.3.1"}}});
+  ws.libraries.push_back({.name = "My-Cool-Lib-2.3.1", .roots = {{.path = "/lib.jar"}}});
 
-    ws.promote_module_deps();
+  ws.promote_module_deps();
 
-    const auto& dep = ws.modules[1].dependencies[0];
-    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
-    CHECK(std::get<klspw::ModuleDep>(dep).name == "My-Cool-Lib");
-    CHECK(ws.libraries.empty());
+  const auto& dep = ws.modules[1].dependencies[0];
+  REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
+  CHECK(std::get<klspw::ModuleDep>(dep).name == "My-Cool-Lib");
+  CHECK(ws.libraries.empty());
 }
 
 TEST_CASE("promote_module_deps no-op when no modules") {
-    klspw::WorkspaceData ws;
-    ws.libraries.push_back({.name = "foo-1.0", .roots = {{.path = "/foo.jar"}}});
+  klspw::WorkspaceData ws;
+  ws.libraries.push_back({.name = "foo-1.0", .roots = {{.path = "/foo.jar"}}});
 
-    ws.promote_module_deps();
+  ws.promote_module_deps();
 
-    CHECK(ws.libraries.size() == 1);
+  CHECK(ws.libraries.size() == 1);
 }
 
 TEST_CASE("promote_module_deps skips self-dependency") {
-    klspw::WorkspaceData ws;
-    ws.modules.push_back({.name = "CoreLib", .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0"}}});
-    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib.jar"}}});
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib", .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0"}}});
+  ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib.jar"}}});
 
-    ws.promote_module_deps();
+  ws.promote_module_deps();
 
-    // Should remain a library dep, not promote to self-referencing module dep.
-    CHECK(std::holds_alternative<klspw::LibraryDep>(ws.modules[0].dependencies[0]));
+  // Should remain a library dep, not promote to self-referencing module dep.
+  CHECK(std::holds_alternative<klspw::LibraryDep>(ws.modules[0].dependencies[0]));
 }
 
 TEST_CASE("promote_module_deps preserves isExported") {
-    klspw::WorkspaceData ws;
-    ws.modules.push_back({.name = "CoreLib"});
-    ws.modules.push_back(
-        {.name = "App", .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .isExported = true}}});
-    ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib.jar"}}});
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0", .isExported = true}}});
+  ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib.jar"}}});
 
-    ws.promote_module_deps();
+  ws.promote_module_deps();
 
-    const auto& dep = ws.modules[1].dependencies[0];
-    REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
-    CHECK(std::get<klspw::ModuleDep>(dep).isExported);
+  const auto& dep = ws.modules[1].dependencies[0];
+  REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
+  CHECK(std::get<klspw::ModuleDep>(dep).isExported);
 }
 
 // --- module_names ---
 
 TEST_CASE("module_names returns set of module names") {
-    klspw::WorkspaceData ws;
-    ws.modules.push_back({.name = "App"});
-    ws.modules.push_back({.name = "CoreLib"});
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "App"});
+  ws.modules.push_back({.name = "CoreLib"});
 
-    const auto names = ws.module_names();
+  const auto names = ws.module_names();
 
-    CHECK(names.size() == 2);
-    CHECK(names.contains("App"));
-    CHECK(names.contains("CoreLib"));
+  CHECK(names.size() == 2);
+  CHECK(names.contains("App"));
+  CHECK(names.contains("CoreLib"));
 }
 
 TEST_CASE("module_names empty when no modules") {
-    const klspw::WorkspaceData ws;
-    CHECK(ws.module_names().empty());
+  const klspw::WorkspaceData ws;
+  CHECK(ws.module_names().empty());
 }
 
 // (remove_missing_jars tests moved to gradle_test.cpp — operates on SourceSet now)

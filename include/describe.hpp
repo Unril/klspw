@@ -22,48 +22,48 @@ concept Describable = requires(const T& t) { t.describe(); };
 /// Log at info level with lazy arg evaluation.
 template <typename... Args>
 void d_info(spdlog::format_string_t<detail::eval_t<Args>...> fmt, Args&&... args) {
-    if (spdlog::should_log(spdlog::level::info)) {
-        spdlog::info(fmt, detail::eval(std::forward<Args>(args))...);
-    }
+  if (spdlog::should_log(spdlog::level::info)) {
+    spdlog::info(fmt, detail::eval(std::forward<Args>(args))...);
+  }
 }
 
 /// Log at debug level with lazy arg evaluation.
 template <typename... Args>
 void d_debug(spdlog::format_string_t<detail::eval_t<Args>...> fmt, Args&&... args) {
-    if (spdlog::should_log(spdlog::level::debug)) {
-        spdlog::debug(fmt, detail::eval(std::forward<Args>(args))...);
-    }
+  if (spdlog::should_log(spdlog::level::debug)) {
+    spdlog::debug(fmt, detail::eval(std::forward<Args>(args))...);
+  }
 }
 
 /// Log at trace level with lazy arg evaluation.
 template <typename... Args>
 void d_trace(spdlog::format_string_t<detail::eval_t<Args>...> fmt, Args&&... args) {
-    if (spdlog::should_log(spdlog::level::trace)) {
-        spdlog::trace(fmt, detail::eval(std::forward<Args>(args))...);
-    }
+  if (spdlog::should_log(spdlog::level::trace)) {
+    spdlog::trace(fmt, detail::eval(std::forward<Args>(args))...);
+  }
 }
 
 /// Describe a single element.
 template <Describable T>
 void d_describe(const T& item) {
-    item.describe();
+  item.describe();
 }
 
 /// Describe an optional element. No-op if empty.
 template <typename T>
 void d_describe(const optional<T>& item) {
-    if (item) {
-        d_describe(*item);
-    }
+  if (item) {
+    d_describe(*item);
+  }
 }
 
 /// Describe each element in a range of Describable elements.
 template <r::input_range R>
-    requires Describable<r::range_value_t<R>>
+  requires Describable<r::range_value_t<R>>
 void d_describe(const R& range) {
-    for (const auto& elem : range) {
-        d_describe(elem);
-    }
+  for (const auto& elem : range) {
+    d_describe(elem);
+  }
 }
 
-} // namespace klspw
+}  // namespace klspw

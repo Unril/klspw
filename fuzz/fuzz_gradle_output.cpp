@@ -9,12 +9,12 @@
 #include "gradle.hpp"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-    try {
-        const std::string_view input(reinterpret_cast<const char*>(data), size); // NOLINT
-        auto out = klspw::GradleBuildOutput::from_raw_output(input);
-        (void)out;
-    } catch (...) { // NOLINT
-        // Expected: missing delimiters, JSON parse errors. Not a bug.
-    }
-    return 0;
+  try {
+    const std::string_view input(reinterpret_cast<const char*>(data), size);  // NOLINT
+    auto out = klspw::GradleBuildOutput::from_raw_output(input);
+    (void)out;
+  } catch (...) {  // NOLINT
+                   // Expected: missing delimiters, JSON parse errors. Not a bug.
+  }
+  return 0;
 }

@@ -56,7 +56,7 @@ Config (YAML) -> Pipeline -> GradleRunner (subprocess) -> raw stdout
 
 - Namespace: `klspw`
 - Preconditions via `require(condition, format_string, args...)` -- throws `runtime_error` on failure
-- `require` args support lazy evaluation (zero-arg callables), `fs::path`, and `std::error_code` auto-conversion
+- `require` args support lazy evaluation (zero-arg callables), `path`, and `std::error_code` auto-conversion
 - Shared type aliases: `strings`, `opt_string`, `string_set` (defined in `common.hpp`)
 - Range adaptors: `to_vector()`, `unique_by(proj)`, `not_in(set)` (defined in `ranges.hpp`)
-- `GradleBuildFn = std::function<string(const BuildConfig&, const fs::path&)>` for dependency injection in tests
+- `GradleBuildFn = std::function<string(const BuildConfig&, const path&)>` for dependency injection in tests

@@ -16,6 +16,7 @@ vcpkg_installed/
 *~
 work/
 AGENTS.md
+tmp_*.sh
 tmp_*.json
 tmp_*.txt
 

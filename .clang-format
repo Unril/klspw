@@ -1,40 +1,24 @@
-BasedOnStyle: LLVM
+BasedOnStyle: Google
 Language: Cpp
 Standard: Latest
 
 ColumnLimit: 120
 
-IndentWidth: 4
-ContinuationIndentWidth: 4
-AccessModifierOffset: -2
+MaxEmptyLinesToKeep: 1
 
-BreakBeforeBraces: Attach
-AlignAfterOpenBracket: false
-BreakTemplateDeclarations: Yes
-
-AllowAllArgumentsOnNextLine: false
-AllowAllParametersOfDeclarationOnNextLine: false
-BinPackArguments: false
-BinPackParameters: OnePerLine
-
-PackConstructorInitializers: CurrentLine
-ConstructorInitializerIndentWidth: 4
-
+# see https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 AllowShortFunctionsOnASingleLine: All
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortBlocksOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 
-DerivePointerAlignment: false
-PointerAlignment: Left
-ReferenceAlignment: Left
+RequiresClausePosition: OwnLine
+PackConstructorInitializers: NextLine
+BreakTemplateDeclarations: Yes
+SeparateDefinitionBlocks: Always
 
-EmptyLineBeforeAccessModifier: LogicalBlock
-EmptyLineAfterAccessModifier: Never
-
-SpaceAfterCStyleCast: false
-SpaceAfterTemplateKeyword: true
-SpaceBeforeParens: ControlStatements
+AlignTrailingComments:
+  Kind: Never
 
 IncludeBlocks: Regroup
 IncludeCategories:
@@ -47,6 +31,3 @@ IncludeCategories:
 SortIncludes:
   Enabled: true
   IgnoreCase: true
-
-AlignTrailingComments:
-  Kind: Never

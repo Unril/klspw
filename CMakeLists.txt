@@ -119,6 +119,7 @@ if(BUILD_TESTING)
     klspw_add_test(config_validate_test test/config_validate_test.cpp)
     klspw_add_test(config_save_test test/config_save_test.cpp)
     klspw_add_test(sources_test test/sources_test.cpp)
+    klspw_add_test(files_test test/files_test.cpp)
 
     if(ENABLE_INTEGRATION_TESTS)
         klspw_add_test(integration_test test/integration_test.cpp LABELS "integration")

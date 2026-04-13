@@ -13,114 +13,117 @@
 namespace {
 
 struct LogLevel {
-    std::string_view name;
-    spdlog::level::level_enum level;
+  std::string_view name;
+  spdlog::level::level_enum level;
 };
 
 constexpr std::array log_levels = {
-    LogLevel{.name = "trace", .level = spdlog::level::trace},
-    LogLevel{.name = "debug", .level = spdlog::level::debug},
-    LogLevel{.name = "info", .level = spdlog::level::info},
-    LogLevel{.name = "warn", .level = spdlog::level::warn},
-    LogLevel{.name = "error", .level = spdlog::level::err},
-    LogLevel{.name = "off", .level = spdlog::level::off},
+    LogLevel{.name = "trace", .level = spdlog::level::trace}, LogLevel{.name = "debug", .level = spdlog::level::debug},
+    LogLevel{.name = "info", .level = spdlog::level::info},   LogLevel{.name = "warn", .level = spdlog::level::warn},
+    LogLevel{.name = "error", .level = spdlog::level::err},   LogLevel{.name = "off", .level = spdlog::level::off},
 };
 
 std::set<std::string> log_level_names() {
-    return log_levels | std::views::transform(&LogLevel::name) | std::ranges::to<std::set<std::string>>();
+  return log_levels | std::views::transform(&LogLevel::name) | std::ranges::to<std::set<std::string>>();
 }
 
 void set_log_level(std::string_view level) {
-    const auto* it = std::ranges::find(log_levels, level, &LogLevel::name);
-    klspw::require(it != log_levels.end(), "Invalid log level: {}", level);
-    spdlog::set_level(it->level);
+  const auto* it = std::ranges::find(log_levels, level, &LogLevel::name);
+  klspw::require(it != log_levels.end(), "Invalid log level: {}", level);
+  spdlog::set_level(it->level);
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char* argv[]) try {
-    CLI::App app{{"klspw - Generate workspace.json for kotlin-lsp from Gradle builds"}};
-    app.set_version_flag("-V,--version", std::string{klspw::version});
-    app.footer(R"(Quick start:
+  CLI::App app{{"klspw - Generate workspace.json for kotlin-lsp from Gradle builds"}};
+  app.set_version_flag("-V,--version", std::string{klspw::version});
+  app.footer(R"(Quick start:
   klspw -c . init ./my-project                   # one root, default ./gradlew
   klspw -c . init "./proj gradlew"               # one root, custom build
   klspw -c . init ./proj_1 ./proj_2 -b my-build  # two roots, global build
+  klspw -c . init -d ~/workplace/my-repo         # discover Gradle projects
   klspw generate                                 # run Gradle, write workspace.json)");
-    app.require_subcommand(1);
+  app.require_subcommand(1);
 
-    std::string config_path;
-    std::string log_level = "info";
+  std::string config_path;
+  std::string log_level = "info";
 
-    app.add_option("-c,--config", config_path, "Path to config YAML file");
-    app.add_option("-l,--log-level", log_level, "Log level: trace, debug, info, warn, error, off")
-        ->default_val("info")
-        ->check(CLI::IsMember(log_level_names()));
+  app.add_option("-c,--config", config_path, "Path to config YAML file");
+  app.add_option("-l,--log-level", log_level, "Log level: trace, debug, info, warn, error, off")
+      ->default_val("info")
+      ->check(CLI::IsMember(log_level_names()));
 
-    // --- init subcommand ---
-    auto* init = app.add_subcommand("init", "Generate a starter config YAML for a Gradle root");
-    klspw::strings init_roots;
-    std::string init_jvm_target = "21";
-    std::string init_build;
-    init->add_option("roots", init_roots, "Root args: \"path [build_command...]\" ...")->required();
-    init->add_option("--jvm-target", init_jvm_target, "JVM target version")->default_val("21");
-    init->add_option("-b,--build", init_build, "Global build command for all roots");
+  // --- init subcommand ---
+  auto* init = app.add_subcommand("init", "Generate a starter config YAML for a Gradle root");
+  klspw::strings init_roots;
+  std::string init_jvm_target = "21";
+  std::string init_build;
+  bool init_discover = false;
+  init->add_option("roots", init_roots, "Root args: \"path [build_command...]\" ...")->required();
+  init->add_option("--jvm-target", init_jvm_target, "JVM target version")->default_val("21");
+  init->add_option("-b,--build", init_build, "Global build command for all roots");
+  init->add_flag("-d,--discover", init_discover, "Search directories recursively for Gradle projects");
 
-    // --- subcommands requiring --config ---
-    auto* gen = app.add_subcommand("generate", "Generate workspace.json");
-    auto* insp = app.add_subcommand("inspect", "Print discovered modules, jars, and source roots");
-    auto* val = app.add_subcommand("validate", "Validate config and discovered paths");
+  // --- subcommands requiring --config ---
+  auto* gen = app.add_subcommand("generate", "Generate workspace.json");
+  auto* insp = app.add_subcommand("inspect", "Print discovered modules, jars, and source roots");
+  auto* val = app.add_subcommand("validate", "Validate config and discovered paths");
 
-    std::string gradle_output_path;
-    for (auto* sub : {gen, insp}) {
-        sub->add_option("--save-gradle-output", gradle_output_path, "Save raw Gradle output to a file");
+  std::string gradle_output_path;
+  for (auto* sub : {gen, insp}) {
+    sub->add_option("--save-gradle-output", gradle_output_path, "Save raw Gradle output to a file");
+  }
+
+  CLI11_PARSE(app, argc, argv);
+
+  set_log_level(log_level);
+
+  if (init->parsed()) {
+    auto starter = init_discover ? klspw::StarterConfig::discover(init_roots).set_jvm_target(init_jvm_target)
+                                 : klspw::StarterConfig{init_roots}.set_jvm_target(init_jvm_target);
+
+    starter.set_config_path(config_path);
+
+    if (!init_build.empty()) {
+      starter.set_build(init_build);
     }
 
-    CLI11_PARSE(app, argc, argv);
-
-    set_log_level(log_level);
-
-    if (init->parsed()) {
-        auto starter = klspw::StarterConfig{init_roots}.set_jvm_target(init_jvm_target).set_config_path(config_path);
-
-        if (!init_build.empty()) {
-            starter.set_build(init_build);
-        }
-
-        if (!starter.config_path().empty()) {
-            starter.save_yaml_file();
-        } else {
-            std::cout << starter.to_yaml();
-        }
-        return 0;
+    if (!starter.config_path().empty()) {
+      starter.save_yaml_file();
+    } else {
+      std::cout << starter.to_yaml();
     }
-
-    // All other subcommands use --config (defaults to ./klspw.yaml).
-    auto cfg = klspw::Config::load_yaml_file(config_path);
-
-    if (val->parsed()) {
-        klspw::ValidateContext::require_valid(cfg);
-        klspw::d_info("Config valid.");
-        return 0;
-    }
-
-    klspw::GradleRunner runner;
-    klspw::Pipeline pipeline{std::move(cfg), std::ref(runner)};
-
-    if (!gradle_output_path.empty()) {
-        pipeline.set_gradle_output_path(gradle_output_path);
-    }
-
-    if (gen->parsed()) {
-        pipeline.write_workspace();
-    } else if (insp->parsed()) {
-        pipeline.log_workspace();
-    }
-
     return 0;
+  }
+
+  // All other subcommands use --config (defaults to ./klspw.yaml).
+  auto cfg = klspw::Config::load_yaml_file(config_path);
+
+  if (val->parsed()) {
+    klspw::ValidateContext::require_valid(cfg);
+    klspw::d_info("Config valid.");
+    return 0;
+  }
+
+  klspw::GradleRunner runner;
+  klspw::Pipeline pipeline{std::move(cfg), std::ref(runner)};
+
+  if (!gradle_output_path.empty()) {
+    pipeline.set_gradle_output_path(gradle_output_path);
+  }
+
+  if (gen->parsed()) {
+    pipeline.write_workspace();
+  } else if (insp->parsed()) {
+    pipeline.log_workspace();
+  }
+
+  return 0;
 } catch (const std::exception& e) {
-    spdlog::critical("{}", e.what());
-    return 1;
+  spdlog::critical("{}", e.what());
+  return 1;
 } catch (...) {
-    spdlog::critical("Unknown fatal error");
-    return 1;
+  spdlog::critical("Unknown fatal error");
+  return 1;
 }

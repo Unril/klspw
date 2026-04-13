@@ -4,7 +4,7 @@ configure:
     cmake --preset {{ preset }}
 
 build:
-    cmake --build --preset {{ preset }}
+    cmake --build --preset {{ preset }} --parallel
 
 test:
     ctest --preset {{ preset }}
@@ -42,7 +42,7 @@ format:
 # Fuzz targets (requires Clang, uses libFuzzer + ASan)
 fuzz-build:
     cmake --preset fuzz
-    cmake --build --preset fuzz
+    cmake --build --preset fuzz --parallel
 
 # Run a fuzz target for 60 seconds (default: fuzz_config_yaml)
 fuzz target="fuzz_config_yaml" seconds="60": fuzz-build
@@ -58,7 +58,7 @@ integration-configure:
     cmake --preset {{ preset }} -DENABLE_INTEGRATION_TESTS=ON
 
 integration-build: integration-configure
-    cmake --build --preset {{ preset }}
+    cmake --build --preset {{ preset }} --parallel
 
 integration: integration-build
     ctest --preset {{ preset }} -L integration
@@ -84,7 +84,7 @@ coverage-configure:
     cmake --preset coverage
 
 coverage-build: coverage-configure
-    cmake --build --preset coverage
+    cmake --build --preset coverage --parallel
 
 coverage-run: coverage-clean coverage-build
     mkdir -p {{ cov-dir }}
