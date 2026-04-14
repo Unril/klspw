@@ -404,7 +404,7 @@ fun Project.extractAndroidSourceSets(androidExt: Any): List<Map<String, Any?>> {
       val mainKotlin = sourceSetMap["main"]?.second ?: emptyList()
       val mainRes = sourceSetMap["main"]?.third ?: emptyList()
 
-      // Android namespace (e.g., "com.amazon.rabbit.android") for R class coordinate naming.
+      // Android namespace (e.g., "com.my.package.android") for R class coordinate naming.
       val androidNamespace =
         runCatching { androidExt.safeProp("namespace") as? String }.getOrNull()
           ?: name // fall back to project name

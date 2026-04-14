@@ -2,6 +2,7 @@
 build/
 .cache/
 .gradle/
+.klspw/
 .kotlin/
 compile_commands.json
 default.profraw
@@ -32,3 +33,7 @@ tmp_*.txt
 
 # Fuzz corpus (generated at runtime)
 fuzz/corpus/
+
+# Stubs build outputs (jar is rebuilt from .hex at configure time)
+resources/stubs/kotlin-native-stubs.jar
+resources/stubs/build/

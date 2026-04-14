@@ -25,9 +25,12 @@ configure_file(
     @ONLY
 )
 
-# Embed resources/stubs/kotlin-native-stubs.jar as a C byte array.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/stubs/kotlin-native-stubs.jar" KLSPW_NATIVE_STUBS_RAW HEX)
-string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," KLSPW_NATIVE_STUBS_HEX "${KLSPW_NATIVE_STUBS_RAW}")
+# Embed kotlin-native-stubs as a C byte array.
+# The hex file is a text representation of the jar (avoids binary artifacts in the repo).
+# It contains the same hex string that file(READ ... HEX) would produce, split across lines.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/stubs/kotlin-native-stubs.jar.hex" KLSPW_NATIVE_STUBS_HEX_RAW)
+string(REPLACE "\n" "" KLSPW_NATIVE_STUBS_HEX_JOINED "${KLSPW_NATIVE_STUBS_HEX_RAW}")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," KLSPW_NATIVE_STUBS_HEX "${KLSPW_NATIVE_STUBS_HEX_JOINED}")
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/native_stubs_content.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/native_stubs_content.hpp"
