@@ -1,15 +1,13 @@
 #include "gradle.hpp"
 
-#include <filesystem>
 #include <stdexcept>
 #include <string>
 
 #include <doctest/doctest.h>
 
-#include "gradle_runner.hpp"
 #include "test_common.hpp"
 
-namespace fs = std::filesystem;
+using namespace klspw;
 
 // --- GradleBuildOutput::from_raw_output ---
 
@@ -207,49 +205,6 @@ TEST_CASE("parses fixture file") {
   CHECK(main_ss.name == "main");
   CHECK_FALSE(main_ss.compile_classpath.empty());
   CHECK_FALSE(main_ss.source_roots.empty());
-}
-
-// --- GradleRunner ---
-
-TEST_CASE("GradleRunner writes init script to specified temp dir") {
-  const TempDir tmp;
-  const klspw::GradleRunner runner(tmp.path);
-
-  const auto& path = runner.init_script_path();
-  REQUIRE(fs::exists(path));
-  CHECK(path.string().starts_with(tmp.path.string()));
-  CHECK(path.extension() == ".kts");
-}
-
-TEST_CASE("init script contains expected markers") {
-  const TempDir tmp;
-  const klspw::GradleRunner runner(tmp.path);
-
-  const auto content = klspw::read_file(runner.init_script_path());
-
-  CHECK(content.contains("dumpKotlinLspModel"));
-  CHECK(content.contains("KLSPW_BEGIN"));
-  CHECK(content.contains("KLSPW_END"));
-  CHECK(content.contains("JsonOutput"));
-}
-
-TEST_CASE("init script is cleaned up on destruction") {
-  const TempDir tmp;
-  fs::path script_path;
-  {
-    const klspw::GradleRunner runner(tmp.path);
-    script_path = runner.init_script_path();
-    REQUIRE(fs::exists(script_path));
-  }
-  CHECK_FALSE(fs::exists(script_path));
-}
-
-TEST_CASE("GradleRunner uses default temp dir when not specified") {
-  const klspw::GradleRunner runner;
-
-  const auto& path = runner.init_script_path();
-  REQUIRE(fs::exists(path));
-  CHECK(path.string().contains("klspw"));
 }
 
 // --- SourceSet → workspace model conversion ---
@@ -509,7 +464,7 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
     })");
 
   const auto& proj = output.projects[0];
-  const auto ks = proj.to_kotlin_settings(R"(J{"jvmTarget":"21"})", proj.active_sets(no_tests));
+  const auto ks = proj.to_kotlin_settings("21", proj.active_sets(no_tests));
 
   CHECK(ks.name == "Kotlin");
   CHECK(ks.module == "proj");
@@ -520,6 +475,73 @@ TEST_CASE("GradleProject::to_kotlin_settings builds settings") {
 
   REQUIRE(ks.pure_kotlin_source_folders.size() == 1);
   CHECK(ks.pure_kotlin_source_folders[0] == "/tmp/proj/src/main/kotlin");
+}
+
+TEST_CASE("GradleProject::to_kotlin_settings includes compiler plugin classpath") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": [],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": [],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }],
+            "compilerPluginClasspath": ["/plugins/serialization.jar", "/plugins/compose.jar"]
+        }]
+    })");
+
+  const auto& proj = output.projects[0];
+  const auto ks = proj.to_kotlin_settings("21", proj.active_sets(no_tests));
+
+  REQUIRE(ks.compiler_arguments.has_value());
+  CHECK(ks.compiler_arguments->contains("pluginClasspaths"));
+  CHECK(ks.compiler_arguments->contains("serialization.jar"));
+  CHECK(ks.compiler_arguments->contains("compose.jar"));
+  CHECK(ks.compiler_arguments->contains("jvmTarget"));
+  CHECK(*ks.compiler_arguments ==
+        R"(J{"jvmTarget":"21","pluginClasspaths":["/plugins/serialization.jar","/plugins/compose.jar"]})");
+}
+
+TEST_CASE("GradleProject::to_kotlin_settings omits pluginClasspaths when empty") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": [],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": [],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+  const auto& proj = output.projects[0];
+  const auto ks = proj.to_kotlin_settings("21", proj.active_sets(no_tests));
+
+  REQUIRE(ks.compiler_arguments.has_value());
+  CHECK(*ks.compiler_arguments == R"(J{"jvmTarget":"21"})");
+  CHECK_FALSE(ks.compiler_arguments->contains("pluginClasspaths"));
 }
 
 TEST_CASE("SourceSet::pure_kotlin_roots excludes java and resource dirs") {
@@ -650,7 +672,7 @@ TEST_CASE("SourceSet::library_from_jar skips sources when no resolver") {
 
 TEST_CASE("GradleBuildOutput::to_workspace builds complete workspace") {
   const auto output = klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_output.json"));
-  const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", no_tests);
+  const auto ws = output.to_workspace("21", no_tests);
 
   // One active project → one module
   REQUIRE(ws.modules.size() == 1);
@@ -729,7 +751,7 @@ TEST_CASE("GradleBuildOutput::to_workspace skips skipped projects") {
 
 TEST_CASE("to_workspace output serializes to valid JSON") {
   const auto output = klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_output.json"));
-  const auto ws = output.to_workspace(R"(J{"jvmTarget":"21"})", no_tests);
+  const auto ws = output.to_workspace("21", no_tests);
 
   const auto json_result = glz::write_json(ws);
   REQUIRE(json_result.has_value());
@@ -823,4 +845,402 @@ TEST_CASE("remove_missing_paths handles empty collections") {
 
   CHECK(ss.compile_classpath.empty());
   CHECK(ss.source_roots.empty());
+}
+
+// --- KMP+Android fixture: library naming with AGP transforms + Gradle cache metadata ---
+
+TEST_CASE("Android project: active_sets picks one variant to avoid redeclarations") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "android",
+            "plugins": ["com.android.build.gradle.LibraryPlugin"],
+            "sourceSets": [
+                {"name":"debug","sourceRoots":["/tmp/proj/src/main/kotlin","/tmp/proj/src/debug/kotlin"],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"release","sourceRoots":["/tmp/proj/src/main/kotlin","/tmp/proj/src/release/kotlin"],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"debugUnitTest","sourceRoots":["/tmp/proj/src/test/kotlin","/tmp/proj/src/debug/kotlin"],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar","/cache/junit.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"releaseUnitTest","sourceRoots":["/tmp/proj/src/test/kotlin","/tmp/proj/src/release/kotlin"],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":["/cache/a.jar","/cache/junit.jar"],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}
+            ]
+        }]
+    })");
+
+  const auto& proj = output.projects[0];
+
+  SUBCASE("without tests: picks only debug variant") {
+    constexpr klspw::GenerationOptions opts{.include_tests = false, .remove_missing_paths = false};
+    const auto sets = proj.active_sets(opts);
+    REQUIRE(sets.size() == 1);
+    CHECK(sets[0].name == "debug");
+  }
+
+  SUBCASE("with tests: picks debug + debugUnitTest") {
+    constexpr klspw::GenerationOptions opts{.include_tests = true, .remove_missing_paths = false};
+    const auto sets = proj.active_sets(opts);
+    REQUIRE(sets.size() == 2);
+    CHECK(sets[0].name == "debug");
+    CHECK(sets[1].name == "debugUnitTest");
+  }
+
+  SUBCASE("module has no duplicate source roots from release variant") {
+    constexpr klspw::GenerationOptions opts{.include_tests = true, .remove_missing_paths = false};
+    const auto mod = proj.to_module(proj.active_sets(opts));
+    REQUIRE(!mod.content_roots.empty());
+    const auto& roots = mod.content_roots[0].source_roots;
+    // Should NOT contain src/release/kotlin
+    const auto has_release = std::ranges::any_of(roots, [](const auto& r) { return r.path.contains("release"); });
+    CHECK_FALSE(has_release);
+    // Should contain src/debug/kotlin
+    const auto has_debug = std::ranges::any_of(roots, [](const auto& r) { return r.path.contains("debug"); });
+    CHECK(has_debug);
+  }
+}
+
+TEST_CASE("KMP-Android project: active_sets picks debug + androidDebugUnitTest") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "kmp-android",
+            "plugins": ["com.android.build.gradle.LibraryPlugin","org.jetbrains.kotlin.gradle.plugin.KotlinMultiplatformPlugin"],
+            "sourceSets": [
+                {"name":"debug","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"release","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"androidDebugUnitTest","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"androidReleaseUnitTest","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"debugUnitTest","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"releaseUnitTest","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}
+            ]
+        }]
+    })");
+
+  const auto& proj = output.projects[0];
+  constexpr klspw::GenerationOptions opts{.include_tests = true, .remove_missing_paths = false};
+  const auto sets = proj.active_sets(opts);
+
+  // Should pick: debug, debugUnitTest, androidDebugUnitTest
+  REQUIRE(sets.size() == 3);
+  CHECK(sets[0].name == "debug");
+  CHECK(sets[1].name == "debugUnitTest");
+  CHECK(sets[2].name == "androidDebugUnitTest");
+}
+
+TEST_CASE("JVM project: active_sets returns all source sets (no variant filtering)") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [
+                {"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""},
+                {"name":"test","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}
+            ]
+        }]
+    })");
+
+  constexpr klspw::GenerationOptions opts{.include_tests = true, .remove_missing_paths = false};
+  const auto sets = output.projects[0].active_sets(opts);
+  CHECK(sets.size() == 2);
+}
+
+TEST_CASE("KMP+Android: parses fixture with AGP transforms and Gradle cache metadata jars") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+
+  CHECK(output.root_project == "/home/dev/projects/kmp-android");
+  REQUIRE(output.projects.size() == 2);
+  CHECK(output.projects[0].kind == "kmp-android");
+  CHECK(output.active_project_count() == 2);
+}
+
+TEST_CASE("KMP+Android: Gradle cache metadata jars get Maven coordinate names") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+  constexpr klspw::GenerationOptions opts{
+      .include_tests = false, .attach_sources = true, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("", opts);
+
+  // Three distinct public-metadata.jar files should produce three distinct library names.
+  const auto lib_names = ws.library_names();
+  CHECK(lib_names.contains("com.example.platform:presenter-public:1.0.0"));
+  CHECK(lib_names.contains("com.example.platform:scope-public:1.0.0"));
+  CHECK(lib_names.contains("com.example.logger:logger-public:2.0.0"));
+
+  // AGP transform jars now get Maven coordinate names from classpathCoordinates.
+  CHECK(lib_names.contains("com.example.platform:presenter-public-android:1.0.0"));
+  CHECK(lib_names.contains("com.example.platform:scope-public-android:1.0.0"));
+  CHECK(lib_names.contains("org.jetbrains.kotlin:kotlin-stdlib:2.0.0"));
+}
+
+TEST_CASE("KMP+Android: no library name collisions from public-metadata.jar") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+  constexpr klspw::GenerationOptions opts{
+      .include_tests = false, .attach_sources = true, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("", opts);
+
+  // Without Maven coordinate naming, all three would collide as "public-metadata".
+  // With it, each gets a unique name. Verify no duplicates.
+  std::unordered_set<std::string> seen;
+  for (const auto& lib : ws.libraries) {
+    CHECK_MESSAGE(seen.insert(lib.name).second, "Duplicate library name: ", lib.name);
+  }
+}
+
+TEST_CASE("KMP+Android: Gradle cache metadata jars have sources attached via sourceClasspath") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+  constexpr klspw::GenerationOptions opts{
+      .include_tests = false, .attach_sources = true, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("", opts);
+
+  // Find presenter-public and verify it has sources.
+  const auto it = std::ranges::find_if(
+      ws.libraries, [](const auto& lib) { return lib.name == "com.example.platform:presenter-public:1.0.0"; });
+  REQUIRE(it != ws.libraries.end());
+  REQUIRE(it->roots.size() == 2);
+  CHECK(it->roots[0].type == "CLASSES");
+  CHECK(it->roots[0].path.contains("public-metadata.jar"));
+  CHECK(it->roots[1].type == "SOURCES");
+  CHECK(it->roots[1].path.contains("presenter-public-1.0.0-sources.jar"));
+}
+
+TEST_CASE("KMP+Android: AGP transform libraries get unique names from classpathCoordinates") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+  constexpr klspw::GenerationOptions opts{
+      .include_tests = false, .attach_sources = true, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("", opts);
+
+  // Two jetified-public-release-api.jar files with different transform hashes
+  // now get distinct Maven coordinate names instead of colliding.
+  const auto it = std::ranges::find_if(
+      ws.libraries, [](const auto& lib) { return lib.name == "com.example.platform:presenter-public-android:1.0.0"; });
+  REQUIRE(it != ws.libraries.end());
+  CHECK(it->roots[0].path.contains("transforms/aaa111"));
+}
+
+TEST_CASE("KMP+Android: module deps reference both AGP and Maven-named libraries") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+  constexpr klspw::GenerationOptions opts{
+      .include_tests = false, .attach_sources = true, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("", opts);
+
+  // The 'app' module should depend on both AGP and Maven-named libraries.
+  const auto& app = ws.modules[0];
+  CHECK(app.name == "app");
+
+  auto has_lib_dep = [&](const std::string& name) {
+    return std::ranges::any_of(app.dependencies, [&](const auto& d) {
+      const auto* lib = std::get_if<klspw::LibraryDep>(&d);
+      return lib && lib->name == name;
+    });
+  };
+
+  CHECK(has_lib_dep("com.example.platform:presenter-public-android:1.0.0"));
+  CHECK(has_lib_dep("com.example.platform:presenter-public:1.0.0"));
+  CHECK(has_lib_dep("com.example.platform:scope-public:1.0.0"));
+  CHECK(has_lib_dep("com.example.logger:logger-public:2.0.0"));
+}
+
+TEST_CASE("KMP+Android: referential integrity holds") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+  constexpr klspw::GenerationOptions opts{
+      .include_tests = false, .attach_sources = true, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("", opts);
+
+  const auto lib_names = ws.library_names();
+  for (const auto& mod : ws.modules) {
+    for (const auto& dep : mod.dependencies) {
+      const auto* lib = std::get_if<klspw::LibraryDep>(&dep);
+      if (lib != nullptr) {
+        CHECK_MESSAGE(lib_names.contains(lib->name), "Module '", mod.name, "' references missing library '", lib->name,
+                      "'");
+      }
+    }
+  }
+}
+
+TEST_CASE("KMP+Android: R class jars get unique namespace-based library names") {
+  const auto output =
+      klspw::GradleBuildOutput::from_json(klspw::read_file("test/fixtures/gradle_kmp_android_output.json"));
+  constexpr klspw::GenerationOptions opts{
+      .include_tests = false, .attach_sources = true, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("", opts);
+
+  // Each Android module should have its own R-class library with a unique coordinate name.
+  const auto lib_names = ws.library_names();
+  CHECK(lib_names.contains("com.example.kmp.app:R:debug"));
+  CHECK(lib_names.contains("com.example.kmp.core:R:debug"));
+
+  // Each module should depend on its own R-class library.
+  for (const auto& mod : ws.modules) {
+    const auto r_name = "com.example.kmp." + mod.name + ":R:debug";
+    const auto has_r_dep =
+        std::ranges::any_of(mod.deps_of_type<klspw::LibraryDep>(), [&](const auto& dep) { return dep.name == r_name; });
+    CHECK_MESSAGE(has_r_dep, "Module '", mod.name, "' should depend on '", r_name, "'");
+  }
+}
+
+// --- describe ---
+
+TEST_CASE("GradleBuildOutput::describe logs project summary and source sets") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/my-project",
+        "projects": [{
+            "projectPath": ":app",
+            "projectDir": "/tmp/my-project/app",
+            "kind": "jvm",
+            "plugins": ["org.jetbrains.kotlin.jvm"],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": ["/tmp/my-project/app/src/main/kotlin"],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": ["/cache/lib-1.0.jar", "/cache/lib-2.0.jar"],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+  const LogCapture log;
+  output.describe();
+  const auto out = log.output();
+
+  // Root project path mentioned
+  CHECK(out.contains("/tmp/my-project"));
+  // Project path mentioned
+  CHECK(out.contains(":app"));
+  // Source set name mentioned
+  CHECK(out.contains("main"));
+  // Project count mentioned
+  CHECK(out.contains("1"));
+}
+
+// --- collect_project_deps ---
+
+TEST_CASE("collect_project_deps returns module-to-dependency mapping") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/root",
+        "projects": [
+            {
+                "projectPath": ":app",
+                "projectDir": "/tmp/root/app",
+                "kind": "jvm",
+                "plugins": [],
+                "sourceSets": [{"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}],
+                "projectDependencies": [":core", ":util"]
+            },
+            {
+                "projectPath": ":core",
+                "projectDir": "/tmp/root/core",
+                "kind": "jvm",
+                "plugins": [],
+                "sourceSets": [{"name":"main","sourceRoots":[],"javaSourceRoots":[],"resourcesRoots":[],"classesDirs":[],"resourcesDir":null,"compileClasspath":[],"runtimeClasspath":[],"compileClasspathConfigurationName":"","runtimeClasspathConfigurationName":""}]
+            }
+        ]
+    })");
+
+  const auto deps = output.collect_project_deps();
+
+  // app depends on core and util; core has no project deps so it's absent
+  REQUIRE(deps.size() == 1);
+  CHECK(deps.contains("app"));
+  CHECK(deps.at("app").contains(":core"));
+  CHECK(deps.at("app").contains(":util"));
+}
+
+TEST_CASE("collect_project_deps skips skipped projects") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/root",
+        "projects": [{
+            "projectPath": ":skipped",
+            "projectDir": "/tmp/root/skipped",
+            "kind": "non-jvm",
+            "plugins": [],
+            "sourceSets": [],
+            "skipReason": "No JVM",
+            "projectDependencies": [":core"]
+        }]
+    })");
+
+  CHECK(output.collect_project_deps().empty());
+}
+
+// --- to_workspace with attach_sources=false ---
+
+TEST_CASE("to_workspace with attach_sources=false uses collect_libraries without sources") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": [],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": ["/cache/lib-1.0.jar"],
+                "runtimeClasspath": [],
+                "sourceClasspath": {"/cache/lib-1.0.jar": "/cache/lib-1.0-sources.jar"},
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+  constexpr klspw::GenerationOptions opts{.attach_sources = false, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("21", opts);
+
+  REQUIRE(ws.libraries.size() == 1);
+  // Only CLASSES root, no SOURCES even though sourceClasspath is available
+  CHECK(ws.libraries[0].roots.size() == 1);
+  CHECK(ws.libraries[0].roots[0].type == "CLASSES");
+}
+
+// --- to_workspace with remove_missing_paths=true ---
+
+TEST_CASE("to_workspace with remove_missing_paths=true removes nonexistent paths") {
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+        "rootProject": "/tmp/proj",
+        "projects": [{
+            "projectPath": ":",
+            "projectDir": "/tmp/proj",
+            "kind": "jvm",
+            "plugins": [],
+            "sourceSets": [{
+                "name": "main",
+                "sourceRoots": ["/tmp"],
+                "javaSourceRoots": [],
+                "resourcesRoots": [],
+                "classesDirs": [],
+                "resourcesDir": null,
+                "compileClasspath": ["/tmp", "/nonexistent/missing.jar"],
+                "runtimeClasspath": [],
+                "compileClasspathConfigurationName": "",
+                "runtimeClasspathConfigurationName": ""
+            }]
+        }]
+    })");
+
+  constexpr klspw::GenerationOptions opts{.attach_sources = false, .remove_missing_paths = true};
+  const auto ws = output.to_workspace("21", opts);
+
+  // /nonexistent/missing.jar removed, only /tmp remains
+  REQUIRE(ws.libraries.size() == 1);
+  CHECK(ws.libraries[0].roots[0].path == "/tmp");
 }

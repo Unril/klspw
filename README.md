@@ -13,7 +13,7 @@ Generate `workspace.json` for [kotlin-lsp] from Gradle builds.
 
 Targets repositories where the default kotlin-lsp project import does not work -- when the build runs through a wrapper around Gradle, or when dependencies come from custom package or cache layouts.
 
-## Quick start
+## Installation
 
 ```bash
 # Homebrew (macOS)
@@ -28,16 +28,28 @@ just install                      # release build + install to /usr/local
 
 ## Usage
 
+### Quick start for any Gradle project
+
 ```bash
-# Generate a starter config for a Gradle root
-klspw init ./my-project
-klspw -c . init ./my-project              # write to ./klspw.yaml
+cd my-project
+klspw -c . init -d ./              # discover Gradle roots, write klspw.yaml
+klspw generate                     # run Gradle, write workspace.json
+```
+
+Open the folder in VS Code or Kiro with the [kotlin-lsp extension](https://github.com/Kotlin/kotlin-lsp/releases) installed. kotlin-lsp detects `workspace.json` and imports the workspace.
+
+### All commands
+
+```bash
+# Generate a starter config (-c . writes to ./klspw.yaml; without -c, prints to stdout)
+klspw -c . init ./my-project              # explicit root
+klspw -c . init -d ./src                  # discover roots under ./src
 klspw -c . init "./proj gradlew"          # custom build command
 klspw -c . init ./proj_1 ./proj_2 -b cmd  # multiple roots, global build
 
-# Run Gradle and write workspace.json (uses ./klspw.yaml by default)
+# Run Gradle and write workspace.json (reads ./klspw.yaml by default)
 klspw generate
-klspw -c config.yaml generate           # explicit config path
+klspw -c config.yaml generate             # explicit config path
 
 # Inspect discovered modules and libraries without writing
 klspw inspect
@@ -46,7 +58,8 @@ klspw inspect
 klspw validate
 
 # Save raw Gradle output for debugging
-klspw -c config.yaml generate --save-gradle-output output.txt
+klspw generate --save-gradle-output output.txt
+klspw inspect --save-gradle-output output.txt   # also works on inspect
 
 # Verbose logging
 klspw --log-level debug generate
@@ -89,17 +102,20 @@ options:
 
 1. Read config, validate paths
 2. For each root, run the configured Gradle command with a temporary init script
-3. The init script dumps project metadata as JSON between `KLSPW_BEGIN`/`KLSPW_END` delimiters, including Gradle-resolved source jar mappings
+3. The init script dumps project metadata as JSON between `KLSPW_BEGIN`/`KLSPW_END` delimiters, including Gradle-resolved source jar mappings, classpath coordinates (Maven `group:module:version` for each jar), and compiler plugin classpaths
 4. Parse source sets, classpaths, and project structure from the JSON output
-5. Attach source jars to libraries (from Gradle resolution, then filesystem discovery as fallback)
-6. Convert to kotlin-lsp workspace model (modules, libraries, kotlin settings)
-7. Merge results across roots, deduplicating libraries by name
-8. Promote library dependencies to module dependencies when a library matches a workspace module (sibling Gradle root)
-9. Write deterministic, pretty-printed `workspace.json`
+5. Name libraries using Maven coordinates (from classpath coordinates or Gradle cache paths) to avoid collisions in KMP projects where multiple libraries produce identically-named jars
+6. For Android projects, pick one build variant (debug) to avoid class redeclaration errors from variant-specific source directories; include the R class jar from build intermediates so `R.layout.*`, `R.string.*`, etc. resolve correctly
+7. Attach source jars to libraries (from Gradle resolution, filesystem discovery, then coordinate-based cache search as fallback)
+8. Convert to kotlin-lsp workspace model (modules, libraries, kotlin settings with compiler plugin classpaths)
+9. Merge results across roots, deduplicating libraries by name
+10. Promote library dependencies to module dependencies when a library matches a workspace module (sibling Gradle root)
+11. For KMP projects, inject a kotlin-native-stubs.jar providing JVM stubs for `kotlin.native.*` annotations that only exist in Kotlin/Native metadata
+12. Write deterministic, pretty-printed `workspace.json`
 
-## VS Code setup with kotlin-lsp
+## Editor setup with kotlin-lsp
 
-[kotlin-lsp] provides Kotlin language support for VS Code (completion, diagnostics, navigation, refactoring). It normally imports Gradle projects automatically, but that fails when the build runs through a wrapper or dependencies come from non-standard locations. klspw bridges this gap by generating a `workspace.json` that kotlin-lsp can import directly.
+[kotlin-lsp] provides Kotlin language support (completion, diagnostics, navigation, refactoring) for VS Code and [Kiro](https://kiro.dev/docs). It normally imports Gradle projects automatically, but that fails when the build runs through a wrapper or dependencies come from non-standard locations. klspw bridges this gap by generating a `workspace.json` that kotlin-lsp can import directly.
 
 Prerequisites: Java 17+ on PATH.
 
@@ -109,7 +125,7 @@ Prerequisites: Java 17+ on PATH.
    brew install JetBrains/utils/kotlin-lsp
    ```
 
-2. Install the VS Code extension: download the latest `.vsix` from the [kotlin-lsp releases page](https://github.com/Kotlin/kotlin-lsp/releases), then install it via Extensions > `...` > Install from VSIX.
+2. Install the editor extension: download the latest `.vsix` from the [kotlin-lsp releases page](https://github.com/Kotlin/kotlin-lsp/releases), then install it via Extensions > `...` > Install from VSIX.
 
 3. Create a klspw config in your Kotlin project root:
 
@@ -127,141 +143,30 @@ Prerequisites: Java 17+ on PATH.
 
    This writes `workspace.json` next to `klspw.yaml`.
 
-5. Open the project folder in VS Code. kotlin-lsp detects `workspace.json` and uses it for project import instead of running Gradle itself.
+5. Open the project folder in VS Code or Kiro. kotlin-lsp detects `workspace.json` and uses it for project import instead of running Gradle itself.
 
 6. If you change dependencies or project structure, re-run `klspw generate` and restart the language server with the `Kotlin LSP: Restart` command from the command palette.
 
-To verify the import worked, check the kotlin-lsp output panel in VS Code for messages about loaded modules and libraries.
+To verify the import worked, check the kotlin-lsp output panel for messages about loaded modules and libraries.
 
 ## Project structure
 
 ```text
-include/
-  common.hpp            # type aliases, namespace imports, glaze opts, require()
-  strings.hpp           # string utilities: trim, join, split_words, strip_prefixes, extract_between
-  files.hpp             # file I/O: read_file, write_file, find_dir, find_file, file_stem
-  ranges.hpp            # range adaptors: to_vector, unique_by, not_in
-  describe.hpp          # d_info/d_debug/d_trace logging + Describable concept
-  validate.hpp          # ValidateContext for collecting validation errors
-  config.hpp            # config model + YAML loading via glaze
-  gradle_runner.hpp     # GradleRunner: init script lifecycle
-  gradle.hpp            # Gradle model types + parser + workspace conversion
-  workspace.hpp         # kotlin-lsp workspace.json schema types
-  pipeline.hpp          # Pipeline: orchestrates generate/inspect commands
-  process_runner.hpp    # ProcessRunner: subprocess execution via reproc++
-  sources.hpp           # source jar/directory discovery for library attachment
-src/
-  main.cpp              # CLI entry point (CLI11)
-  strings.cpp           # extract_between implementation
-  files.cpp             # file I/O and filesystem search implementations
-test/
-  test_common.hpp       # shared RAII test fixtures (TempDir, TempConfig, TempFile)
-  smoke.cpp             # basic smoke tests
-  config_test.cpp       # config loading tests
-  config_validate_test.cpp  # config validation tests
-  config_save_test.cpp  # config YAML round-trip and StarterConfig tests
-  gradle_test.cpp       # Gradle parsing + workspace conversion
-  workspace_json_test.cpp  # workspace model round-trip serialization
-  common_test.cpp       # utility function tests
-  process_test.cpp      # subprocess execution tests
-  sources_test.cpp      # source discovery tests
-  integration_test.cpp  # end-to-end tests with real Gradle projects
-resources/
-  init.gradle.kts       # Gradle init script (embedded at build time)
-fuzz/
-  fuzz_config_yaml.cpp  # fuzz target for YAML config parsing
-  fuzz_gradle_output.cpp # fuzz target for Gradle output parsing
-scripts/
-  resolve-action-shas.sh # resolve GitHub Actions tags to commit SHAs
+include/          # Public headers (header-only logic + declarations)
+src/              # CLI entry point and .cpp implementations
+test/             # Unit and integration tests (doctest)
+  fixtures/       # Test data (YAML configs, Gradle projects)
+resources/        # Gradle init script, CMake templates, and KMP stub jars
+fuzz/             # libFuzzer fuzz targets
+scripts/          # Utility scripts
 ```
 
-## Build
+## Contributing
 
-```bash
-just configure   # cmake --preset dev
-just build       # cmake --build --preset dev
-just test        # ctest --preset dev
-just check       # all three
-just release     # configure + build + test with release preset
-just sanitize    # ASan + UBSan build and test
-just install     # release build + install to /usr/local
-just install /opt/klspw  # install to custom prefix
-
-# Fuzzing (requires Clang with libFuzzer)
-just fuzz                              # build + run fuzz_config_yaml for 60s
-just fuzz fuzz_gradle_output 120       # specific target, 120s
-
-# Format all source files
-just format
-
-# Integration tests (requires Gradle on PATH)
-just integration
-```
-
-## Dependencies
-
-- [CLI11](https://github.com/CLIUtils/CLI11) -- command-line parsing
-- [glaze](https://github.com/stephenberry/glaze) -- JSON and YAML serialization
-- [reproc++](https://github.com/DaanDeMeyer/reproc) -- subprocess execution
-- [spdlog](https://github.com/gabime/spdlog) -- logging
-- [doctest](https://github.com/doctest/doctest) -- testing
-
-All managed via vcpkg manifest mode.
-
-## References
-
-- [kotlin-lsp]
-- [CMake Presets](https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html)
-- [vcpkg manifest mode](https://learn.microsoft.com/en-us/vcpkg/concepts/manifest-mode)
-
-## CI
-
-GitHub Actions workflows automate building, testing, security scanning, and releasing:
-
-`ci.yml` runs on every push to `master` and on pull requests. It builds and tests on macOS 26 (arm64 and Intel, both using Xcode 26.4) and Ubuntu 24.04 (GCC 15). The workflow uses the `release` CMake preset with vcpkg for dependency management. Cached vcpkg binaries speed up repeat runs. After building, it installs into a staging directory and runs a smoke test (`--version` + `init` on a fixture project).
-
-`release.yml` triggers when a `v*` tag is pushed. It builds release binaries for macOS arm64, macOS x86_64, and Linux x86_64, packages them as `.tar.gz` archives, generates [artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for supply-chain integrity, and uploads them to a GitHub Release with auto-generated notes.
-
-`codeql.yml` runs CodeQL static analysis on pushes to `master`, pull requests, and weekly. It scans both C++ source code (manual build with GCC 15 on Ubuntu) and GitHub Actions workflow files.
-
-`dependency-review.yml` runs on pull requests and flags newly introduced vulnerable dependencies or license violations.
-
-`scorecard.yml` runs the [OpenSSF Scorecard](https://scorecard.dev) analysis weekly and on pushes to `master`, publishing results to the code scanning dashboard.
-
-`fuzzing.yml` runs [ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) on pull requests, fuzzing the YAML config parser and Gradle output parser with AddressSanitizer for 5 minutes per run.
-
-Homebrew bottles (prebuilt binaries) are built separately by the [homebrew-tap] repo's own CI workflows using `brew test-bot`.
-
-## Publishing a release
-
-1. Update the version in `CMakeLists.txt` (`project(klspw VERSION x.y.z ...)`) and `vcpkg.json`.
-2. Commit, tag, and push:
-
-   ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
-
-3. The release workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release with the archives attached.
-4. Get the source tarball sha256 for Homebrew:
-
-   ```bash
-   curl -sL https://github.com/Unril/klspw/archive/refs/tags/v0.2.0.tar.gz | shasum -a 256
-   ```
-
-5. In the [homebrew-tap] repo, update `Formula/klspw.rb` with the new `url`, `sha256`, and version. Open a PR, let the tap CI build bottles, then label the PR `pr-pull` to publish them.
-
-Users can verify the provenance of downloaded release binaries:
-
-```bash
-gh attestation verify ./klspw-darwin-arm64.tar.gz -R Unril/klspw
-```
-
-Users upgrade with `brew upgrade klspw`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions, dependencies, CI, and release process.
 
 ## License
 
 [MIT](LICENSE)
 
 [kotlin-lsp]: https://github.com/Kotlin/kotlin-lsp
-[homebrew-tap]: https://github.com/Unril/homebrew-tap

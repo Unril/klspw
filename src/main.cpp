@@ -121,9 +121,9 @@ int main(int argc, char* argv[]) try {
 
   return 0;
 } catch (const std::exception& e) {
-  spdlog::critical("{}", e.what());
+  klspw::d_critical("{}", e.what());
   return 1;
 } catch (...) {
-  spdlog::critical("Unknown fatal error");
+  klspw::d_critical("Unknown fatal error");
   return 1;
 }

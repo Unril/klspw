@@ -3,8 +3,6 @@
 #include <functional>
 #include <thread>
 
-#include <spdlog/spdlog.h>
-
 #include "config.hpp"
 #include "files.hpp"
 #include "init_script_content.hpp"
@@ -62,7 +60,7 @@ class GradleRunner {
     std::error_code ec;
     fs::remove(path_copy, ec);
     if (ec) {
-      spdlog::warn("Failed to remove init script {}: {}", path_copy.string(), ec.message());
+      d_warn("Failed to remove init script {}: {}", path_copy, ec);
     }
   }
 

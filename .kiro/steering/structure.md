@@ -6,22 +6,32 @@
 klspw/
   include/           # Public headers (header-only logic + declarations)
     common.hpp       # Type aliases, namespace imports, glaze opts, require()
-    strings.hpp      # String utilities: trim, join, split_words, strip_prefixes, extract_between
-    files.hpp        # File I/O: read_file, write_file, find_dir, find_file, file_stem
-    ranges.hpp       # Range adaptors: to_vector, unique_by, not_in
+    config.hpp       # Config, ConfigData, StarterConfig: config model + YAML loading via glaze
     describe.hpp     # d_info/d_debug/d_trace logging + Describable concept
+    files.hpp        # File I/O: read_file, write_file, find_dir, find_file, file_stem
+    gradle.hpp       # GradleBuildOutput, GradleProject, SourceSet: Gradle model + parser + workspace conversion
+    gradle_runner.hpp # GradleRunner: init script lifecycle, GradleBuildFn type alias
+    module_matcher.hpp # ModuleMatcher: library-to-module name resolution
+    pipeline.hpp     # Pipeline: orchestrates generate/inspect commands
+    process_runner.hpp # ProcessRunner: subprocess execution via reproc++
+    ranges.hpp       # Range adaptors: to_vector, unique_by, not_in
+    sources.hpp      # JarPath: jar classification, Maven coordinate extraction, source discovery
+    strings.hpp      # String utilities: trim, join, split_words, strip_prefixes, extract_between
     validate.hpp     # ValidateContext for collecting validation errors
+    workspace.hpp    # WorkspaceData, ModuleData, LibraryData, KotlinSettingsData: workspace.json schema
   src/
     main.cpp         # CLI entry point (CLI11 subcommands)
     strings.cpp      # extract_between implementation
     files.cpp        # File I/O and filesystem search implementations
   test/              # One test binary per file, shared RAII fixtures in a common header
     fixtures/        # Test data (YAML configs, JSON outputs)
-      projects/      # Real Gradle projects for integration tests (simple, with-deps, multi, multi-root)
+      projects/      # Real Gradle projects for integration tests (simple, with-deps, with-serialization, multi, multi-root, kmp)
   fuzz/              # libFuzzer fuzz targets (one per entry point)
   scripts/           # Utility scripts (resolve-action-shas.sh)
   resources/
     init.gradle.kts  # Gradle init script (embedded at build time via configure_file)
+    *.hpp.in         # CMake configure_file templates (init script, native stubs, version)
+    stubs/           # Precompiled JVM stubs for KMP-only annotations (kotlin.native.*)
   .clusterfuzzlite/  # ClusterFuzzLite CI build integration (Dockerfile, build.sh)
 ```
 
@@ -35,7 +45,7 @@ The codebase is mostly header-only. Only file I/O (`files.cpp`) and `extract_bet
 Config (YAML) -> Pipeline -> GradleRunner (subprocess) -> raw stdout
   -> GradleBuildOutput::from_raw_output (delimiter extraction + JSON parse)
   -> GradleBuildOutput::to_workspace (-> WorkspaceData)
-  -> merge across roots + promote_module_deps
+  -> merge across roots + promote_module_deps + inject native stubs (KMP)
   -> write workspace.json
 ```
 
@@ -47,10 +57,11 @@ Config (YAML) -> Pipeline -> GradleRunner (subprocess) -> raw stdout
 - `GradleRunner` (`gradle_runner.hpp`) -- RAII manager for the temp init script file. Writes on construction, removes on destruction. Callable as `GradleBuildFn`
 - `GradleBuildOutput` / `GradleProject` / `SourceSet` (`gradle.hpp`) -- mirror the JSON emitted by the init script. Each type owns its conversion to workspace model types (Tell Don't Ask)
 - `WorkspaceData` / `ModuleData` / `LibraryData` / `KotlinSettingsData` (`workspace.hpp`) -- match the kotlin-lsp `workspace.json` schema
-- `Pipeline` (`pipeline.hpp`) -- owns a `Config` and a `GradleBuildFn`, orchestrates the full generate/inspect flow
+- `ModuleMatcher` (`module_matcher.hpp`) -- resolves library names to workspace module names using longest-match-first; handles exact, versioned-suffix, AGP jetified prefixes, and Maven coordinate module components
+- `Pipeline` (`pipeline.hpp`) -- owns a `Config` and a `GradleBuildFn`, orchestrates the full generate/inspect flow; injects kotlin-native-stubs.jar for KMP projects
 - `ProcessRunner` (`process_runner.hpp`) -- subprocess execution via reproc++
-- `SourceResolver` (`sources.hpp`) -- source jar/directory discovery for library attachment
-- `DescribeContext` (`describe.hpp`) -- empty struct passed to describe() methods; `d_info`/`d_debug`/`d_trace` free functions for leveled logging with lazy arg evaluation; `Describable` concept; `d_describe` for ranges/optionals
+- `JarPath` (`sources.hpp`) -- classifies jar paths by origin (Gradle module cache, AGP transform, package cache); extracts Maven coordinates via regex; discovers source jars
+- `describe.hpp` -- `d_info`/`d_debug`/`d_trace` free functions for leveled logging with lazy arg evaluation; `Describable` concept; `d_describe` for ranges/optionals. Model types implement `void describe() const` (no context parameter)
 
 ### Conventions
 

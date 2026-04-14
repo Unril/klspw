@@ -13,23 +13,10 @@
 #include "common.hpp"
 #include "describe.hpp"
 #include "files.hpp"
+#include "module_matcher.hpp"
 #include "ranges.hpp"
 
 namespace klspw {
-
-/// Check if a library name corresponds to a module name.
-/// Matches exact ("lib" == "lib") or prefix-with-dash ("core-jvm" starts with "core" + "-").
-/// Used by promote_module_deps and remove_missing_paths to identify inter-project dependencies.
-inline bool matches_module_name(string_view lib_name, string_view module_name) {
-  return lib_name == module_name || (lib_name.size() > module_name.size() && lib_name.starts_with(module_name) &&
-                                     lib_name[module_name.size()] == '-');
-}
-
-/// Check if a classpath entry's file stem matches any module name.
-inline bool classpath_matches_module(string_view classpath_entry, const string_set& module_names) {
-  const auto stem = file_stem(classpath_entry);
-  return r::any_of(module_names, [&](const auto& mod) { return matches_module_name(stem, mod); });
-}
 
 /// Library/SDK root type constants used in LibraryRootData and SdkRootData.
 inline constexpr auto root_type_classes = "CLASSES"sv;
@@ -341,48 +328,63 @@ struct WorkspaceData {
   /// Promote library dependencies to module dependencies when the library
   /// corresponds to a module in the workspace (e.g., sibling Gradle root).
   /// Also removes the promoted libraries from the libraries list.
-  /// Library name "Foo-1.0" matches module name "Foo" (name + "-" prefix).
+  /// When project_deps is provided (module_name -> set of dependency module names),
+  /// only promotes library deps whose target module is a known project dependency.
+  /// This avoids false positives from external libraries whose artifact names
+  /// happen to match module names (e.g., "presenter-public" -> "public-metadata.jar").
   /// Returns the number of promoted dependencies.
-  size_t promote_module_deps() {
-    const auto mod_names = module_names();
-    if (mod_names.empty()) {
+  size_t promote_module_deps(const string_map<string_set>& project_deps = {}) {
+    const ModuleMatcher matcher(module_names());
+    if (matcher.empty()) {
       return 0;
     }
 
-    // Sorted by descending length so "CoreLib" matches before "Core".
-    auto sorted_names = mod_names | r::to<vector<string>>();
-    r::sort(sorted_names, std::greater{}, &string::size);
-
-    const auto find_module = [&](string_view lib_name) {
-      const auto it = r::find_if(sorted_names, [&](const auto& name) { return matches_module_name(lib_name, name); });
-      return it != sorted_names.end() ? *it : opt_string{};
-    };
+    const bool has_project_deps = !project_deps.empty();
 
     string_set promoted_lib_names;
 
-    for (auto& mod : modules) {
-      // Collect promotions: lib dep -> module dep.
-      vector<ModuleDep> new_module_deps;
-      string_set libs_to_remove;
-
-      for (const auto& lib : mod.deps_of_type<LibraryDep>()) {
-        const auto module_name = find_module(lib.name);
-        if (!module_name || *module_name == mod.name) {
-          continue;
-        }
-        libs_to_remove.insert(lib.name);
-        promoted_lib_names.insert(lib.name);
-        new_module_deps.push_back({.name = *module_name, .scope = lib.scope, .isExported = lib.isExported});
+    auto try_promote = [&](const LibraryDep& lib, string_view mod_name) -> optional<ModuleDep> {
+      auto target = matcher.promote_target(lib.name, mod_name);
+      if (!target) {
+        return nullopt;
       }
+      // When explicit project deps are available, gate promotion for Maven-coordinate-named
+      // libraries — but only when the match is indirect (prefix-with-dash, jetified).
+      // Skip the gate when:
+      //   - The library has no ':' (local build output — always a sibling module jar)
+      //   - The Maven module component exactly matches the target module name
+      //     (cross-root deps like "com.example:CoreLib:1.0" -> module "CoreLib")
+      if (has_project_deps && lib.name.contains(':')) {
+        // Extract Maven module component and check for exact match.
+        const auto maven_mod = maven_module_component(lib.name);
+        const bool exact_maven_match = !maven_mod.empty() && maven_mod == *target;
+        if (!exact_maven_match) {
+          const auto it = project_deps.find(string{mod_name});
+          if (it == project_deps.end() || !it->second.contains(*target)) {
+            return nullopt;
+          }
+        }
+      }
+      promoted_lib_names.insert(lib.name);
+      return ModuleDep{.name = *target, .scope = lib.scope, .isExported = lib.isExported};
+    };
 
-      // Apply: remove old lib deps, add new module deps.
-      mod.remove_deps<LibraryDep>(libs_to_remove);
-      mod.add_deps(new_module_deps);
+    for (auto& mod : modules) {
+      vector<ModuleDep> new_deps;
+      string_set to_remove;
+      for (const auto& lib : mod.deps_of_type<LibraryDep>()) {
+        if (auto dep = try_promote(lib, mod.name)) {
+          to_remove.insert(lib.name);
+          new_deps.push_back(std::move(*dep));
+        }
+      }
+      mod.remove_deps<LibraryDep>(to_remove);
+      mod.add_deps(new_deps);
     }
 
-    remove_libraries(promoted_lib_names);
-
-    return promoted_lib_names.size();
+    const auto promoted_count = promoted_lib_names.size();
+    remove_unreferenced_libraries(promoted_lib_names);
+    return promoted_count;
   }
 
   /// Serialize to pretty-printed JSON matching the kotlin-lsp workspace.json schema.
@@ -406,12 +408,23 @@ struct WorkspaceData {
   /// Read workspace.json from a file.
   static WorkspaceData load_json_file(const path& path) { return from_json(read_file(path)); }
 
-  string_set module_names() const { return modules | v::transform(&ModuleData::name) | r::to<string_set>(); }
+  string_set module_names() const { return modules | v::transform(&ModuleData::name) | to_set(); }
+
+  string_set library_names() const { return libraries | v::transform(&LibraryData::name) | to_set(); }
 
   void remove_libraries(const string_set& names) {
     if (!names.empty()) {
       std::erase_if(libraries, [&](const auto& lib) { return names.contains(lib.name); });
     }
+  }
+
+  /// Remove libraries by name, but only those not still referenced by any module's library deps.
+  void remove_unreferenced_libraries(const string_set& candidates) {
+    auto lib_dep_names = [](const ModuleData& mod) {
+      return mod.deps_of_type<LibraryDep>() | v::transform(&LibraryDep::name);
+    };
+    auto still_referenced = modules | v::transform(lib_dep_names) | v::join | to_set();
+    remove_libraries(candidates | not_in(still_referenced) | to_set());
   }
 };
 

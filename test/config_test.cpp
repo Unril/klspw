@@ -196,3 +196,9 @@ TEST_CASE("parses per-root build config without global build") {
     CHECK(build.gradle_args == klspw::strings{"--no-daemon", "--stacktrace"});
   }
 }
+
+TEST_CASE("throws on malformed YAML") {
+  const TempConfig tmp("{{{{ not valid yaml at all ::::");
+  CHECK_THROWS_WITH_AS((void)klspw::Config::load_yaml_file(tmp.path), doctest::Contains("Failed to parse config YAML"),
+                       std::runtime_error);
+}

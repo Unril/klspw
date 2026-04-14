@@ -146,6 +146,8 @@ struct ConfigData {
 
   /// Format compilerArguments for kotlin-lsp KotlinSettingsData.
   /// J prefix is a kotlin-lsp convention: J-prefixed JSON string for compiler args.
+  /// Note: superseded by GradleProject::build_compiler_arguments() which also includes
+  /// plugin classpaths. Kept for config-level tests and backward compatibility.
   string compiler_arguments_json() const { return format(R"(J{{"jvmTarget":"{}"}})", jvm_target); }
 
   /// Serialize to YAML string.

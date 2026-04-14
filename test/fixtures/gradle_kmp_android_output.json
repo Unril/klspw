@@ -1,0 +1,96 @@
+{
+  "rootProject": "/home/dev/projects/kmp-android",
+  "projects": [
+    {
+      "projectPath": ":app",
+      "projectName": "app",
+      "projectDir": "/home/dev/projects/kmp-android/app",
+      "kind": "kmp-android",
+      "plugins": [
+        "com.android.build.gradle.LibraryPlugin",
+        "org.jetbrains.kotlin.gradle.plugin.KotlinMultiplatformPlugin"
+      ],
+      "sourceSets": [
+        {
+          "name": "debug",
+          "sourceRoots": [
+            "/home/dev/projects/kmp-android/app/src/main/kotlin",
+            "/home/dev/projects/kmp-android/app/src/commonMain/kotlin"
+          ],
+          "javaSourceRoots": [],
+          "resourcesRoots": [],
+          "classesDirs": [],
+          "resourcesDir": null,
+          "compileClasspath": [
+            "/home/dev/.gradle/caches/9.1.0/transforms/aaa111/transformed/jetified-public-release-api.jar",
+            "/home/dev/.gradle/caches/9.1.0/transforms/bbb222/transformed/jetified-public-release-api.jar",
+            "/home/dev/.gradle/caches/9.1.0/transforms/ccc333/transformed/jetified-scope-release-api.jar",
+            "/home/dev/.gradle/caches/9.1.0/transforms/ddd444/transformed/jetified-kotlin-stdlib-2.0.0.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/presenter-public/1.0.0/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/public-metadata.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/scope-public/1.0.0/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/public-metadata.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.logger/logger-public/2.0.0/cccccccccccccccccccccccccccccccccccccccc/public-metadata.jar",
+            "/home/dev/projects/kmp-android/app/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar"
+          ],
+          "runtimeClasspath": [],
+          "sourceClasspath": {
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/presenter-public/1.0.0/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/public-metadata.jar": "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/presenter-public/1.0.0/dddddddddddddddddddddddddddddddddddddddd/presenter-public-1.0.0-sources.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/scope-public/1.0.0/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/public-metadata.jar": "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/scope-public/1.0.0/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/scope-public-1.0.0-sources.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.logger/logger-public/2.0.0/cccccccccccccccccccccccccccccccccccccccc/public-metadata.jar": "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.logger/logger-public/2.0.0/ffffffffffffffffffffffffffffffffffffffff/logger-public-2.0.0-sources.jar"
+          },
+          "classpathCoordinates": {
+            "/home/dev/.gradle/caches/9.1.0/transforms/aaa111/transformed/jetified-public-release-api.jar": "com.example.platform:presenter-public-android:1.0.0",
+            "/home/dev/.gradle/caches/9.1.0/transforms/bbb222/transformed/jetified-public-release-api.jar": "com.example.platform:scope-public-android:1.0.0",
+            "/home/dev/.gradle/caches/9.1.0/transforms/ccc333/transformed/jetified-scope-release-api.jar": "com.example.logger:logger-scope-android:2.0.0",
+            "/home/dev/.gradle/caches/9.1.0/transforms/ddd444/transformed/jetified-kotlin-stdlib-2.0.0.jar": "org.jetbrains.kotlin:kotlin-stdlib:2.0.0",
+            "/home/dev/projects/kmp-android/app/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar": "com.example.kmp.app:R:debug"
+          },
+          "compileClasspathConfigurationName": "debugCompileClasspath",
+          "runtimeClasspathConfigurationName": "debugRuntimeClasspath"
+        }
+      ],
+      "projectDependencies": [],
+      "ownOutputJarStems": []
+    },
+    {
+      "projectPath": ":core",
+      "projectName": "core",
+      "projectDir": "/home/dev/projects/kmp-android/core",
+      "kind": "kmp-android",
+      "plugins": [
+        "com.android.build.gradle.LibraryPlugin",
+        "org.jetbrains.kotlin.gradle.plugin.KotlinMultiplatformPlugin"
+      ],
+      "sourceSets": [
+        {
+          "name": "debug",
+          "sourceRoots": [
+            "/home/dev/projects/kmp-android/core/src/main/kotlin"
+          ],
+          "javaSourceRoots": [],
+          "resourcesRoots": [],
+          "classesDirs": [],
+          "resourcesDir": null,
+          "compileClasspath": [
+            "/home/dev/.gradle/caches/9.1.0/transforms/aaa111/transformed/jetified-public-release-api.jar",
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/presenter-public/1.0.0/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/public-metadata.jar",
+            "/home/dev/projects/kmp-android/core/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar"
+          ],
+          "runtimeClasspath": [],
+          "sourceClasspath": {
+            "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/presenter-public/1.0.0/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/public-metadata.jar": "/home/dev/.gradle/caches/modules-2/files-2.1/com.example.platform/presenter-public/1.0.0/dddddddddddddddddddddddddddddddddddddddd/presenter-public-1.0.0-sources.jar"
+          },
+          "classpathCoordinates": {
+            "/home/dev/.gradle/caches/9.1.0/transforms/aaa111/transformed/jetified-public-release-api.jar": "com.example.platform:presenter-public-android:1.0.0",
+            "/home/dev/projects/kmp-android/core/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar": "com.example.kmp.core:R:debug"
+          },
+          "compileClasspathConfigurationName": "debugCompileClasspath",
+          "runtimeClasspathConfigurationName": "debugRuntimeClasspath"
+        }
+      ],
+      "projectDependencies": [
+        "core"
+      ],
+      "ownOutputJarStems": []
+    }
+  ]
+}

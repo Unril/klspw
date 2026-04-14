@@ -1,10 +1,14 @@
 #pragma once
 
-/// Shared RAII test fixtures for temp files and directories.
+/// Shared RAII test fixtures for temp files, directories, and log capture.
 
 #include <atomic>
 #include <filesystem>
+#include <sstream>
 #include <string>
+
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 
 #include "files.hpp"
 
@@ -67,4 +71,30 @@ struct TempFile {
   TempFile& operator=(const TempFile&) = delete;
   TempFile(TempFile&&) = delete;
   TempFile& operator=(TempFile&&) = delete;
+};
+
+/// RAII log capture: installs an ostream sink, restores original on destruction.
+/// stream is mutable so LogCapture can be const (clang-tidy) while the sink writes through it.
+struct LogCapture {
+  mutable std::ostringstream stream;
+  std::shared_ptr<spdlog::logger> original;
+
+  LogCapture() : original(spdlog::default_logger()->clone("backup")) {
+    auto sink = std::make_shared<spdlog::sinks::ostream_sink_st>(stream);
+    sink->set_pattern("%v");
+    spdlog::default_logger()->sinks() = {sink};
+    spdlog::set_level(spdlog::level::trace);
+  }
+
+  ~LogCapture() {
+    spdlog::default_logger()->sinks() = original->sinks();
+    spdlog::set_level(spdlog::level::info);
+  }
+
+  std::string output() const { return stream.str(); }
+
+  LogCapture(const LogCapture&) = delete;
+  LogCapture& operator=(const LogCapture&) = delete;
+  LogCapture(LogCapture&&) = delete;
+  LogCapture& operator=(LogCapture&&) = delete;
 };

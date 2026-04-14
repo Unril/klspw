@@ -56,9 +56,18 @@ auto unique_by(Proj proj = {}) {
 template <typename T = void>
 constexpr auto to_vector() {
   if constexpr (std::is_void_v<T>) {
-    return r::to<vector>();
+    return r::to<std::vector>();
   } else {
-    return r::to<vector<T>>();
+    return r::to<std::vector<T>>();
+  }
+}
+
+template <typename T = void>
+constexpr auto to_set() {
+  if constexpr (std::is_void_v<T>) {
+    return r::to<std::unordered_set>();
+  } else {
+    return r::to<std::unordered_set<T>>();
   }
 }
 

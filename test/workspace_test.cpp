@@ -1,9 +1,11 @@
+#include "workspace.hpp"
+
 #include <string>
 
 #include <doctest/doctest.h>
 
 #include "files.hpp"
-#include "workspace.hpp"
+#include "test_common.hpp"
 
 namespace {
 
@@ -34,6 +36,46 @@ void assert_round_trip(const std::string& path) {
 TEST_CASE("round-trip root workspace") { assert_round_trip("test/fixtures/example_root_workspace.json"); }
 
 TEST_CASE("round-trip proj workspace") { assert_round_trip("test/fixtures/example_proj_workspace.json"); }
+
+// --- WorkspaceData::to_json / from_json ---
+
+TEST_CASE("WorkspaceData::to_json and from_json round-trip") {
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "app"});
+  ws.libraries.push_back({.name = "guava", .roots = {{.path = "/cache/guava.jar"}}});
+  ws.kotlin_settings.push_back({.name = "Kotlin", .module = "app"});
+
+  const auto json = ws.to_json();
+  const auto parsed = klspw::WorkspaceData::from_json(json);
+
+  REQUIRE(parsed.modules.size() == 1);
+  CHECK(parsed.modules[0].name == "app");
+  REQUIRE(parsed.libraries.size() == 1);
+  CHECK(parsed.libraries[0].name == "guava");
+  REQUIRE(parsed.kotlin_settings.size() == 1);
+  CHECK(parsed.kotlin_settings[0].module == "app");
+}
+
+TEST_CASE("WorkspaceData::from_json throws on malformed JSON") {
+  CHECK_THROWS_AS(klspw::WorkspaceData::from_json("{not valid}"), std::runtime_error);
+}
+
+// --- WorkspaceData::save_json_file / load_json_file ---
+
+TEST_CASE("WorkspaceData save and load round-trip through file") {
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "mod"});
+  ws.libraries.push_back({.name = "lib", .roots = {{.path = "/lib.jar"}}});
+
+  const TempDir dir;
+  const auto path = dir.path / "workspace.json";
+  ws.save_json_file(path);
+
+  const auto loaded = klspw::WorkspaceData::load_json_file(path);
+  CHECK(loaded.modules.size() == 1);
+  CHECK(loaded.modules[0].name == "mod");
+  CHECK(loaded.libraries.size() == 1);
+}
 
 TEST_CASE("root workspace structure") {
   const auto ws = from_json<klspw::WorkspaceData>(klspw::read_file("test/fixtures/example_root_workspace.json"));
@@ -306,6 +348,52 @@ TEST_CASE("promote_module_deps skips self-dependency") {
   CHECK(std::holds_alternative<klspw::LibraryDep>(ws.modules[0].dependencies[0]));
 }
 
+TEST_CASE("promote_module_deps keeps library when self-referencing module still needs it") {
+  // Regression: module "public" has jetified-public-release-api as a self-referencing lib dep.
+  // Module "impl" also has it. After promotion, impl gets a module dep on public,
+  // but public keeps its lib dep — the library must NOT be removed from the list.
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "public",
+                        .dependencies = {klspw::LibraryDep{.name = "jetified-public-release-api"},
+                                         klspw::LibraryDep{.name = "jetified-public-api"}}});
+  ws.modules.push_back(
+      {.name = "impl",
+       .dependencies = {klspw::LibraryDep{.name = "jetified-public-release-api"},
+                        klspw::LibraryDep{.name = "jetified-public-api"}, klspw::LibraryDep{.name = "guava-33.0"}}});
+  ws.libraries.push_back({.name = "jetified-public-release-api", .roots = {{.path = "/pub-release.jar"}}});
+  ws.libraries.push_back({.name = "jetified-public-api", .roots = {{.path = "/pub.jar"}}});
+  ws.libraries.push_back({.name = "guava-33.0", .roots = {{.path = "/guava.jar"}}});
+
+  const auto promoted = ws.promote_module_deps();
+  CHECK(promoted == 2);
+
+  // public: self-referencing lib deps remain (not promoted to self module dep).
+  const auto& pub_deps = ws.modules[0].dependencies;
+  CHECK(std::holds_alternative<klspw::LibraryDep>(pub_deps[0]));
+  CHECK(std::holds_alternative<klspw::LibraryDep>(pub_deps[1]));
+
+  // impl: promoted to module deps on public, guava untouched.
+  const auto& impl_deps = ws.modules[1].dependencies;
+  const auto impl_mod_deps = ws.modules[1].dep_count<klspw::ModuleDep>();
+  const auto impl_lib_deps = ws.modules[1].dep_count<klspw::LibraryDep>();
+  CHECK(impl_mod_deps == 2);
+  CHECK(impl_lib_deps == 1);
+  CHECK(std::ranges::any_of(impl_deps, [](const auto& d) {
+    const auto* m = std::get_if<klspw::ModuleDep>(&d);
+    return m && m->name == "public";
+  }));
+  CHECK(std::ranges::any_of(impl_deps, [](const auto& d) {
+    const auto* l = std::get_if<klspw::LibraryDep>(&d);
+    return l && l->name == "guava-33.0";
+  }));
+
+  // Libraries: jetified-public-* kept (still referenced by public), guava kept.
+  CHECK(ws.libraries.size() == 3);
+  CHECK(std::ranges::any_of(ws.libraries, [](const auto& l) { return l.name == "jetified-public-release-api"; }));
+  CHECK(std::ranges::any_of(ws.libraries, [](const auto& l) { return l.name == "jetified-public-api"; }));
+  CHECK(std::ranges::any_of(ws.libraries, [](const auto& l) { return l.name == "guava-33.0"; }));
+}
+
 TEST_CASE("promote_module_deps preserves isExported") {
   klspw::WorkspaceData ws;
   ws.modules.push_back({.name = "CoreLib"});
@@ -338,4 +426,126 @@ TEST_CASE("module_names empty when no modules") {
   CHECK(ws.module_names().empty());
 }
 
-// (remove_missing_jars tests moved to gradle_test.cpp — operates on SourceSet now)
+// --- promote_module_deps with project_deps ---
+
+TEST_CASE("promote_module_deps with project_deps gates indirect Maven matches") {
+  // App depends on "com.example:CoreLib:1.0" — Maven module "CoreLib" matches module "CoreLib"
+  // indirectly (prefix-dash). Without project_deps confirming the dep, it should be blocked.
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "com.example:CoreLib-android:1.0"}}});
+  ws.libraries.push_back({.name = "com.example:CoreLib-android:1.0", .roots = {{.path = "/lib.jar"}}});
+
+  // project_deps says App does NOT depend on CoreLib
+  const klspw::string_map<klspw::string_set> project_deps = {{"App", {}}};
+  ws.promote_module_deps(project_deps);
+
+  // Should NOT be promoted — indirect Maven match blocked by project_deps
+  CHECK(std::holds_alternative<klspw::LibraryDep>(ws.modules[1].dependencies[0]));
+  CHECK(ws.libraries.size() == 1);
+}
+
+TEST_CASE("promote_module_deps with project_deps blocks when module absent from map") {
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "com.example:CoreLib-android:1.0"}}});
+  ws.libraries.push_back({.name = "com.example:CoreLib-android:1.0", .roots = {{.path = "/lib.jar"}}});
+
+  // App is not in project_deps at all — find() returns end()
+  const klspw::string_map<klspw::string_set> project_deps = {{"Other", {"CoreLib"}}};
+  ws.promote_module_deps(project_deps);
+
+  CHECK(std::holds_alternative<klspw::LibraryDep>(ws.modules[1].dependencies[0]));
+  CHECK(ws.libraries.size() == 1);
+}
+
+TEST_CASE("promote_module_deps with project_deps allows indirect Maven match when confirmed") {
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "com.example:CoreLib-android:1.0"}}});
+  ws.libraries.push_back({.name = "com.example:CoreLib-android:1.0", .roots = {{.path = "/lib.jar"}}});
+
+  // project_deps confirms App depends on CoreLib
+  const klspw::string_map<klspw::string_set> project_deps = {{"App", {"CoreLib"}}};
+  ws.promote_module_deps(project_deps);
+
+  // Should be promoted — project_deps confirms the dependency
+  const auto& dep = ws.modules[1].dependencies[0];
+  REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
+  CHECK(std::get<klspw::ModuleDep>(dep).name == "CoreLib");
+  CHECK(ws.libraries.empty());
+}
+
+TEST_CASE("promote_module_deps with project_deps allows exact Maven module match without gate") {
+  // "com.example:CoreLib:1.0" — Maven module component "CoreLib" exactly matches target "CoreLib".
+  // Exact match bypasses the project_deps gate.
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "com.example:CoreLib:1.0"}}});
+  ws.libraries.push_back({.name = "com.example:CoreLib:1.0", .roots = {{.path = "/lib.jar"}}});
+
+  // project_deps does NOT list CoreLib for App — but exact Maven match bypasses the gate
+  const klspw::string_map<klspw::string_set> project_deps = {{"App", {}}};
+  ws.promote_module_deps(project_deps);
+
+  const auto& dep = ws.modules[1].dependencies[0];
+  REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
+  CHECK(std::get<klspw::ModuleDep>(dep).name == "CoreLib");
+}
+
+TEST_CASE("promote_module_deps with project_deps always promotes non-Maven libraries") {
+  // Library without ':' (local build output) — always promoted regardless of project_deps.
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "App", .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0"}}});
+  ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/lib.jar"}}});
+
+  // project_deps is empty — but non-Maven libs skip the gate
+  const klspw::string_map<klspw::string_set> project_deps = {{"App", {}}};
+  ws.promote_module_deps(project_deps);
+
+  const auto& dep = ws.modules[1].dependencies[0];
+  REQUIRE(std::holds_alternative<klspw::ModuleDep>(dep));
+  CHECK(std::get<klspw::ModuleDep>(dep).name == "CoreLib");
+}
+
+TEST_CASE("promote_module_deps returns promoted count") {
+  klspw::WorkspaceData ws;
+  ws.modules.push_back({.name = "CoreLib"});
+  ws.modules.push_back({.name = "Utils"});
+  ws.modules.push_back(
+      {.name = "App",
+       .dependencies = {klspw::LibraryDep{.name = "CoreLib-1.0"}, klspw::LibraryDep{.name = "Utils-2.0"},
+                        klspw::LibraryDep{.name = "guava-33.0"}}});
+  ws.libraries.push_back({.name = "CoreLib-1.0", .roots = {{.path = "/a.jar"}}});
+  ws.libraries.push_back({.name = "Utils-2.0", .roots = {{.path = "/b.jar"}}});
+  ws.libraries.push_back({.name = "guava-33.0", .roots = {{.path = "/c.jar"}}});
+
+  const auto count = ws.promote_module_deps();
+
+  CHECK(count == 2);
+  CHECK(ws.libraries.size() == 1);  // only guava remains
+}
+
+// --- describe ---
+
+TEST_CASE("WorkspaceData::describe logs module and library counts") {
+  const klspw::WorkspaceData ws{
+      .modules = {{.name = "app",
+                   .dependencies = {klspw::LibraryDep{.name = "guava"}, klspw::InheritedSdk{}, klspw::ModuleSource{}},
+                   .content_roots = {{.path = "/src/app",
+                                      .source_roots = {{.path = "/src/app/main/kotlin", .type = "java-source"}}}}}},
+      .libraries = {{.name = "guava", .roots = {{.path = "/cache/guava.jar"}}}},
+      .kotlin_settings = {{.name = "Kotlin", .module = "app"}},
+  };
+
+  const LogCapture log;
+  ws.describe();
+  const auto out = log.output();
+
+  // Module count and library count mentioned
+  CHECK(out.contains("1 module"));
+  CHECK(out.contains("1 library"));
+  // Module name mentioned
+  CHECK(out.contains("app"));
+}

@@ -24,6 +24,16 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/generated/init_script_content.hpp"
     @ONLY
 )
+
+# Embed resources/stubs/kotlin-native-stubs.jar as a C byte array.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/stubs/kotlin-native-stubs.jar" KLSPW_NATIVE_STUBS_RAW HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," KLSPW_NATIVE_STUBS_HEX "${KLSPW_NATIVE_STUBS_RAW}")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/native_stubs_content.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/native_stubs_content.hpp"
+    @ONLY
+)
+
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/version.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp"
@@ -113,9 +123,13 @@ if(BUILD_TESTING)
     klspw_add_test(klspw_tests test/smoke.cpp)
     klspw_add_test(config_test test/config_test.cpp)
     klspw_add_test(gradle_test test/gradle_test.cpp)
-    klspw_add_test(workspace_json_test test/workspace_json_test.cpp)
+    klspw_add_test(workspace_test test/workspace_test.cpp)
+    klspw_add_test(module_matcher_test test/module_matcher_test.cpp)
     klspw_add_test(common_test test/common_test.cpp)
-    klspw_add_test(process_test test/process_test.cpp)
+    klspw_add_test(strings_test test/strings_test.cpp)
+    klspw_add_test(ranges_test test/ranges_test.cpp)
+    klspw_add_test(describe_test test/describe_test.cpp)
+    klspw_add_test(runners_test test/runners_test.cpp)
     klspw_add_test(config_validate_test test/config_validate_test.cpp)
     klspw_add_test(config_save_test test/config_save_test.cpp)
     klspw_add_test(sources_test test/sources_test.cpp)

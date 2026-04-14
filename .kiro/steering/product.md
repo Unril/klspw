@@ -10,9 +10,14 @@ It targets repositories where the default kotlin-lsp project import fails -- whe
 2. Runs each root's Gradle build with an injected init script that dumps project metadata as JSON (between `KLSPW_BEGIN`/`KLSPW_END` delimiters)
 3. Parses source sets, classpaths, and project structure from the Gradle output
 4. Converts to the kotlin-lsp workspace model (modules, libraries, kotlin settings)
-5. Merges results across roots, deduplicates libraries by name
-6. Promotes library dependencies to module dependencies when a library matches a workspace module
-7. Writes deterministic, pretty-printed `workspace.json`
+5. Uses Maven coordinates as library names (from Gradle component IDs and cache paths) to avoid naming collisions in KMP projects
+6. For Android projects, picks one build variant (debug) to avoid class redeclaration errors
+7. Merges results across roots, deduplicates libraries by name
+8. Promotes library dependencies to module dependencies when a library matches a workspace module
+9. Attaches source jars from Gradle-resolved mappings, filesystem discovery, and coordinate-based cache search
+10. Injects kotlin-native-stubs.jar for KMP projects (provides JVM stubs for `kotlin.native.*` annotations)
+11. Includes Kotlin compiler plugin classpaths (serialization, compose) in compiler arguments
+12. Writes deterministic, pretty-printed `workspace.json`
 
 ## CLI subcommands
 
@@ -22,6 +27,7 @@ It targets repositories where the default kotlin-lsp project import fails -- whe
 - `klspw validate` -- check config paths and build commands
 - `-c` flag overrides the config path (file or directory)
 - `-b` flag sets the global build command (init only)
+- `-d` flag on `init` discovers Gradle roots recursively under the given directories
 
 ## Config file
 

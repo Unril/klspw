@@ -42,10 +42,11 @@ fun Project.resolveSourceJars(configName: String): Map<String, String> {
   if (!config.isCanBeResolved) return emptyMap()
 
   return runCatching {
+      // Resolve source jars using the sources variant of the configuration.
       val sourceArtifacts =
         config.incoming
           .artifactView {
-            withVariantReselection()
+            lenient(true)
             attributes {
               attribute(
                 Category.CATEGORY_ATTRIBUTE,
@@ -64,25 +65,92 @@ fun Project.resolveSourceJars(configName: String): Map<String, String> {
           .artifacts
           .artifacts
 
+      // Build source lookup by component ID and by base name.
+      val sourcesByComponentId = mutableMapOf<String, String>()
       val sourcesByBaseName = mutableMapOf<String, String>()
       for (artifact in sourceArtifacts) {
+        val sourcePath = artifact.file.safeCanonicalPath()
+        val componentId = artifact.id.componentIdentifier
+        if (componentId is org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+          sourcesByComponentId[
+            "${componentId.group}:${componentId.module}:${componentId.version}"] = sourcePath
+        }
         val name = artifact.file.name
         val baseName =
-          if (name.endsWith("-sources.jar")) {
-            name.removeSuffix("-sources.jar")
-          } else {
-            artifact.file.nameWithoutExtension
-          }
-        sourcesByBaseName[baseName] = artifact.file.safeCanonicalPath()
+          if (name.endsWith("-sources.jar")) name.removeSuffix("-sources.jar")
+          else artifact.file.nameWithoutExtension
+        sourcesByBaseName[baseName] = sourcePath
       }
 
-      val classesArtifacts = config.incoming.artifacts.artifacts
+      // Match each classpath entry to a source jar.
+      val classesArtifacts =
+        runCatching { config.incoming.artifacts.artifacts }
+          .getOrElse { config.incoming.artifactView { lenient(true) }.artifacts.artifacts }
       val result = mutableMapOf<String, String>()
       for (artifact in classesArtifacts) {
         val classesPath = artifact.file.safeCanonicalPath()
-        val baseName = artifact.file.nameWithoutExtension
-        sourcesByBaseName[baseName]?.let { result[classesPath] = it }
+
+        // Try component ID match (works for non-transformed artifacts and KMP metadata jars).
+        val componentId = artifact.id.componentIdentifier
+        var sourcePath: String? =
+          if (componentId is org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+            sourcesByComponentId[
+              "${componentId.group}:${componentId.module}:${componentId.version}"]
+          } else {
+            null
+          }
+
+        // For AGP-transformed artifacts, try extracting module coordinates from the
+        // display name: "presenter-public.aar
+        // (my.company.app.platform:presenter-public:0.0.7)"
+        if (sourcePath == null) {
+          val match = Regex("""([^:(]+):([^:)]+):([^:)]+)\)""").find(artifact.id.displayName)
+          if (match != null) {
+            val key = "${match.groupValues[1]}:${match.groupValues[2]}:${match.groupValues[3]}"
+            sourcePath = sourcesByComponentId[key]
+          }
+        }
+
+        // Fall back to base name match.
+        if (sourcePath == null) {
+          sourcePath = sourcesByBaseName[artifact.file.nameWithoutExtension]
+        }
+
+        sourcePath?.let { result[classesPath] = it }
       }
+
+      // Second pass: match AGP-transformed artifacts (android-classes-jar) to source jars.
+      // The first pass only covers raw artifacts. AGP transforms produce different file paths
+      // (e.g., jetified-public-release-api.jar) that aren't in the raw artifact list.
+      // variant.owner preserves the original ComponentIdentifier through the transform chain.
+      val agpArtifacts =
+        runCatching {
+            config.incoming
+              .artifactView {
+                attributes {
+                  attribute(
+                    org.gradle.api.attributes.Attribute.of("artifactType", String::class.java),
+                    "android-classes-jar",
+                  )
+                }
+              }
+              .artifacts
+              .artifacts
+          }
+          .getOrNull()
+
+      if (agpArtifacts != null) {
+        for (artifact in agpArtifacts) {
+          val classesPath = artifact.file.safeCanonicalPath()
+          if (classesPath in result) continue
+          val owner = artifact.variant.owner
+          if (owner is org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+            val key = "${owner.group}:${owner.module}:${owner.version}"
+            sourcesByComponentId[key]?.let { result[classesPath] = it }
+          }
+        }
+      }
+
       result
     }
     .getOrElse { e ->
@@ -180,6 +248,38 @@ fun Any?.srcDirs(): List<File> {
     .getOrDefault(emptyList())
 }
 
+// Find the R class jar for an Android build variant.
+// AGP generates a jar containing the R class (resource IDs) at a known path under
+// build/intermediates/. The exact directory structure varies by AGP version:
+//   AGP 7.x:  compile_and_runtime_not_namespaced_r_class_jar/{variant}/R.jar
+//   AGP 8.x+: compile_r_class_jar/{variant}/generate{Variant}RFile/R.jar
+//   AGP 8.x+:
+// compile_and_runtime_not_namespaced_r_class_jar/{variant}/process{Variant}Resources/R.jar (test
+// variants)
+// Returns the canonical path if found, null otherwise.
+// Requires the project to have been built at least once (resource processing must have run).
+fun Project.resolveRClassJar(variant: String): String? {
+  val bd = buildOutputDir()
+  // Search known intermediate directories for R.jar under the variant name.
+  // Each directory may have the jar directly or under a task-name subdirectory.
+  val intermediateDirs =
+    listOf("compile_r_class_jar", "compile_and_runtime_not_namespaced_r_class_jar")
+  for (dirName in intermediateDirs) {
+    val variantDir = File(bd, "intermediates/$dirName/$variant")
+    if (!variantDir.isDirectory) continue
+    // Direct: intermediates/{dir}/{variant}/R.jar
+    val direct = File(variantDir, "R.jar")
+    if (direct.isFile) return direct.safeCanonicalPath()
+    // Task subdirectory: intermediates/{dir}/{variant}/{taskName}/R.jar
+    val subDirs = variantDir.listFiles()?.filter { it.isDirectory } ?: continue
+    for (sub in subDirs) {
+      val jar = File(sub, "R.jar")
+      if (jar.isFile) return jar.safeCanonicalPath()
+    }
+  }
+  return null
+}
+
 // Resolve classpath files for an Android configuration using artifactView.
 // Requests "android-classes-jar" artifact type so AGP's transforms extract classes.jar
 // from AARs. Falls back to lenient raw file resolution if the transform isn't available.
@@ -214,6 +314,71 @@ fun Project.resolveAndroidClasspath(configName: String): List<String> {
     }
 }
 
+// Build a map from classpath jar path to Maven coordinates (group:module:version).
+// Uses artifact.variant.owner which preserves the original ComponentIdentifier
+// through the entire AGP transform chain (JetifyTransform -> AarToClassTransform).
+// This allows klspw to use Maven coordinates as library names even for AGP-transformed jars,
+// eliminating naming collisions (e.g., 11 different KMP libraries all producing
+// "jetified-public-release-api.jar").
+fun Project.resolveClasspathCoordinates(configName: String): Map<String, String> {
+  val config = configurations.findByName(configName) ?: return emptyMap()
+  if (!config.isCanBeResolved) return emptyMap()
+
+  return runCatching {
+      val result = mutableMapOf<String, String>()
+
+      // Resolve with android-classes-jar transform to match resolveAndroidClasspath output.
+      val transformed =
+        runCatching {
+            config.incoming
+              .artifactView {
+                attributes {
+                  attribute(
+                    org.gradle.api.attributes.Attribute.of("artifactType", String::class.java),
+                    "android-classes-jar",
+                  )
+                }
+              }
+              .artifacts
+              .artifacts
+          }
+          .getOrNull()
+
+      if (transformed != null) {
+        for (artifact in transformed) {
+          val owner = artifact.variant.owner
+          if (owner is org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+            result[artifact.file.safeCanonicalPath()] =
+              "${owner.group}:${owner.module}:${owner.version}"
+          }
+        }
+      }
+
+      // Also resolve raw (non-transformed) artifacts for JARs that bypass AGP transforms.
+      val raw =
+        runCatching { config.incoming.artifactView { lenient(true) }.artifacts.artifacts }
+          .getOrNull()
+
+      if (raw != null) {
+        for (artifact in raw) {
+          val path = artifact.file.safeCanonicalPath()
+          if (path !in result) {
+            val owner = artifact.variant.owner
+            if (owner is org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+              result[path] = "${owner.group}:${owner.module}:${owner.version}"
+            }
+          }
+        }
+      }
+
+      result
+    }
+    .getOrElse { e ->
+      logger.warn("klspw: failed to resolve classpath coordinates for $configName: ${e.message}")
+      emptyMap()
+    }
+}
+
 // Extract source sets from an Android extension (Library/Application/DynamicFeature).
 // Emits one entry per build variant (debug, release, etc.) with merged source roots
 // (main + variant) and the variant's compile/runtime classpath.
@@ -238,6 +403,11 @@ fun Project.extractAndroidSourceSets(androidExt: Any): List<Map<String, Any?>> {
       val mainJava = sourceSetMap["main"]?.first ?: emptyList()
       val mainKotlin = sourceSetMap["main"]?.second ?: emptyList()
       val mainRes = sourceSetMap["main"]?.third ?: emptyList()
+
+      // Android namespace (e.g., "com.amazon.rabbit.android") for R class coordinate naming.
+      val androidNamespace =
+        runCatching { androidExt.safeProp("namespace") as? String }.getOrNull()
+          ?: name // fall back to project name
 
       // Android SDK boot classpath (android.jar) — needed for android.os.Bundle, etc.
       @Suppress("UNCHECKED_CAST")
@@ -315,6 +485,22 @@ fun Project.extractAndroidSourceSets(androidExt: Any): List<Map<String, Any?>> {
         val configName = "${variant}CompileClasspath"
         val runtimeConfigName = "${variant}RuntimeClasspath"
 
+        // Include the R class jar (resource IDs) if the project has been built.
+        val rClassJar = resolveRClassJar(variant)
+        val rClassJars = listOfNotNull(rClassJar)
+        // Synthetic coordinate for R.jar so each project gets a unique library name.
+        val rClassCoordinates =
+          if (rClassJar != null) mapOf(rClassJar to "$androidNamespace:R:$variant") else emptyMap()
+        if (rClassJar != null) {
+          logger.info(
+            "klspw: found R class jar for variant '$variant': $rClassJar ($androidNamespace)"
+          )
+        } else {
+          logger.info(
+            "klspw: no R class jar found for variant '$variant' (build the project first to resolve R.* references)"
+          )
+        }
+
         mapOf(
           "name" to variant,
           "sourceRoots" to allSourceRoots,
@@ -323,9 +509,10 @@ fun Project.extractAndroidSourceSets(androidExt: Any): List<Map<String, Any?>> {
           "classesDirs" to emptyList<String>(),
           "resourcesDir" to null,
           "compileClasspath" to
-            (bootClasspath + resolveAndroidClasspath(configName)).distinct().sorted(),
+            (bootClasspath + rClassJars + resolveAndroidClasspath(configName)).distinct().sorted(),
           "runtimeClasspath" to resolveAndroidClasspath(runtimeConfigName),
           "sourceClasspath" to resolveSourceJars(configName),
+          "classpathCoordinates" to resolveClasspathCoordinates(configName) + rClassCoordinates,
           "compileClasspathConfigurationName" to configName,
           "runtimeClasspathConfigurationName" to runtimeConfigName,
         )
@@ -361,6 +548,13 @@ fun Project.extractAndroidSourceSets(androidExt: Any): List<Map<String, Any?>> {
             val configName = "${testVariant}CompileClasspath"
             val runtimeConfigName = "${testVariant}RuntimeClasspath"
 
+            // Test variants use the base variant's R class jar (debugUnitTest -> debug R.jar).
+            val rClassJar = resolveRClassJar(baseVariant)
+            val rClassJars = listOfNotNull(rClassJar)
+            val rClassCoordinates =
+              if (rClassJar != null) mapOf(rClassJar to "$androidNamespace:R:$baseVariant")
+              else emptyMap()
+
             mapOf(
               "name" to testVariant,
               "sourceRoots" to allSourceRoots,
@@ -369,9 +563,12 @@ fun Project.extractAndroidSourceSets(androidExt: Any): List<Map<String, Any?>> {
               "classesDirs" to emptyList<String>(),
               "resourcesDir" to null,
               "compileClasspath" to
-                (bootClasspath + resolveAndroidClasspath(configName)).distinct().sorted(),
+                (bootClasspath + rClassJars + resolveAndroidClasspath(configName))
+                  .distinct()
+                  .sorted(),
               "runtimeClasspath" to resolveAndroidClasspath(runtimeConfigName),
               "sourceClasspath" to resolveSourceJars(configName),
+              "classpathCoordinates" to resolveClasspathCoordinates(configName) + rClassCoordinates,
               "compileClasspathConfigurationName" to configName,
               "runtimeClasspathConfigurationName" to runtimeConfigName,
             )
@@ -416,6 +613,54 @@ fun Project.detectModel(): Map<String, Any?> {
   val pluginClasses = plugins.map { it.javaClass.name }.sorted()
   val kmpSourceSets = extractKmpSourceSets()
 
+  // Collect explicit project dependencies (project(":core"), etc.) from all configurations.
+  // These are used by klspw to promote library deps to module deps without name guessing.
+  val projectDeps = mutableSetOf<String>()
+  for (config in configurations) {
+    if (!config.isCanBeResolved) continue
+    for (dep in config.incoming.dependencies) {
+      if (dep is org.gradle.api.artifacts.ProjectDependency) {
+        // dep.name is the project name (e.g., "core" for project(":core"))
+        projectDeps.add(dep.name)
+      }
+    }
+  }
+
+  // Collect this project's own output jar stems (e.g., "core-jvm", "core-metadata").
+  // Used by klspw to identify which classpath entries are local project outputs vs
+  // external libraries that happen to share the same artifact name.
+  val ownOutputJarStems =
+    runCatching {
+        val bd = buildOutputDir()
+        val libsDir = File(bd, "libs")
+        if (libsDir.isDirectory) {
+          libsDir
+            .listFiles()
+            ?.filter { it.extension == "jar" }
+            ?.map { it.nameWithoutExtension }
+            ?.sorted() ?: emptyList()
+        } else {
+          emptyList()
+        }
+      }
+      .getOrDefault(emptyList<String>())
+
+  // Resolve Kotlin compiler plugin classpath (serialization, compose, etc.).
+  // kotlin-lsp needs these in KotlinSettingsData.compilerArguments.pluginClasspaths
+  // to enable synthetic declarations (e.g., .serializer() from kotlinx-serialization).
+  val compilerPluginClasspath =
+    runCatching {
+        configurations
+          .filter { it.name.contains("CompilerPluginClasspath") && it.isCanBeResolved }
+          .flatMap { it.resolve().toSortedPaths() }
+          .distinct()
+          .sorted()
+      }
+      .getOrElse { e ->
+        logger.debug("klspw: failed to resolve compiler plugin classpath: ${e.message}")
+        emptyList()
+      }
+
   // Android projects: extract source sets from the Android extension.
   // For KMP+Android projects, also merge commonMain/androidMain KMP source sets.
   val androidExt = extensions.findByName("android")
@@ -429,25 +674,51 @@ fun Project.detectModel(): Map<String, Any?> {
       (kmpSourceSets["commonTest"] ?: emptyList()) +
         (kmpSourceSets["androidUnitTest"] ?: emptyList())
 
+    // Resolve KMP metadata classpath for commonMain dependencies that may not appear
+    // in Android variant classpaths (e.g., pure KMP libraries like presenter-public).
+    val kmpMainClasspath =
+      runCatching {
+          val metadataConfig = configurations.findByName("metadataCompileClasspath")
+          metadataConfig?.takeIf { it.isCanBeResolved }?.resolve()?.toSortedPaths() ?: emptyList()
+        }
+        .getOrElse { e ->
+          logger.debug("klspw: failed to resolve metadataCompileClasspath: ${e.message}")
+          emptyList()
+        }
+
     val mergedSourceSets =
-      if (kmpMainDirs.isNotEmpty() || kmpTestDirs.isNotEmpty()) {
+      if (kmpMainDirs.isNotEmpty() || kmpTestDirs.isNotEmpty() || kmpMainClasspath.isNotEmpty()) {
         sourceSets.map { ss ->
           @Suppress("UNCHECKED_CAST") val name = ss["name"] as? String ?: ""
           val isTest = name.contains("UnitTest", ignoreCase = true)
           val extraDirs = if (isTest) (kmpMainDirs + kmpTestDirs) else kmpMainDirs
 
-          if (extraDirs.isEmpty()) return@map ss
-
           @Suppress("UNCHECKED_CAST")
           val existingRoots = ss["sourceRoots"] as? List<String> ?: emptyList()
           @Suppress("UNCHECKED_CAST")
           val existingJavaRoots = ss["javaSourceRoots"] as? List<String> ?: emptyList()
+          @Suppress("UNCHECKED_CAST")
+          val existingClasspath = ss["compileClasspath"] as? List<String> ?: emptyList()
+
+          val mergedRoots =
+            if (extraDirs.isNotEmpty())
+              (existingRoots + extraDirs.toSortedPaths()).distinct().sorted()
+            else existingRoots
+          val mergedJavaRoots =
+            if (extraDirs.isNotEmpty())
+              (existingJavaRoots + extraDirs.toSortedPaths()).distinct().sorted()
+            else existingJavaRoots
+          // Merge KMP metadata classpath into Android variant classpath.
+          val mergedClasspath =
+            if (kmpMainClasspath.isNotEmpty())
+              (existingClasspath + kmpMainClasspath).distinct().sorted()
+            else existingClasspath
 
           ss +
             mapOf(
-              "sourceRoots" to (existingRoots + extraDirs.toSortedPaths()).distinct().sorted(),
-              "javaSourceRoots" to
-                (existingJavaRoots + extraDirs.toSortedPaths()).distinct().sorted(),
+              "sourceRoots" to mergedRoots,
+              "javaSourceRoots" to mergedJavaRoots,
+              "compileClasspath" to mergedClasspath,
             )
         }
       } else {
@@ -461,6 +732,9 @@ fun Project.detectModel(): Map<String, Any?> {
       "kind" to if (kmpSourceSets.isNotEmpty()) "kmp-android" else "android",
       "plugins" to pluginClasses,
       "sourceSets" to mergedSourceSets,
+      "projectDependencies" to projectDeps,
+      "ownOutputJarStems" to ownOutputJarStems,
+      "compilerPluginClasspath" to compilerPluginClasspath,
     )
   }
 
@@ -540,6 +814,9 @@ fun Project.detectModel(): Map<String, Any?> {
       "kind" to "kmp",
       "plugins" to pluginClasses,
       "sourceSets" to kmpEntries,
+      "projectDependencies" to projectDeps,
+      "ownOutputJarStems" to ownOutputJarStems,
+      "compilerPluginClasspath" to compilerPluginClasspath,
     )
   }
 
@@ -555,6 +832,9 @@ fun Project.detectModel(): Map<String, Any?> {
       "kind" to "jvm",
       "plugins" to pluginClasses,
       "sourceSets" to sourceSets,
+      "projectDependencies" to projectDeps,
+      "ownOutputJarStems" to ownOutputJarStems,
+      "compilerPluginClasspath" to compilerPluginClasspath,
     )
   }
 

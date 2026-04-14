@@ -121,3 +121,16 @@ roots:
   CHECK(ctx.errors().size() >= 3);
   CHECK_THROWS_AS(ctx.throw_if_errors(), std::runtime_error);
 }
+
+// --- ValidateContext::has_errors ---
+
+TEST_CASE("ValidateContext has_errors returns false when no errors") {
+  const klspw::ValidateContext ctx;
+  CHECK_FALSE(ctx.has_errors());
+}
+
+TEST_CASE("ValidateContext has_errors returns true after failed check") {
+  klspw::ValidateContext ctx;
+  ctx.check(false, "something went wrong");
+  CHECK(ctx.has_errors());
+}

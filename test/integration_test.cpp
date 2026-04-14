@@ -29,17 +29,17 @@ const klspw::KotlinSettingsData& find_kotlin_settings(const klspw::WorkspaceData
   return *it;
 }
 
-bool has_lib_dep(const klspw::ModuleData& mod, std::string_view name_prefix) {
+bool has_lib_dep(const klspw::ModuleData& mod, std::string_view name_substr) {
   return std::ranges::any_of(mod.dependencies, [&](const auto& dep) {
     if (const auto* lib = std::get_if<klspw::LibraryDep>(&dep)) {
-      return lib->name.starts_with(name_prefix);
+      return lib->name.contains(name_substr);
     }
     return false;
   });
 }
 
-bool has_library(const klspw::WorkspaceData& ws, std::string_view name_prefix) {
-  return std::ranges::any_of(ws.libraries, [&](const auto& lib) { return lib.name.starts_with(name_prefix); });
+bool has_library(const klspw::WorkspaceData& ws, std::string_view name_substr) {
+  return std::ranges::any_of(ws.libraries, [&](const auto& lib) { return lib.name.contains(name_substr); });
 }
 
 bool has_sources_root(const klspw::LibraryData& lib) {
@@ -63,6 +63,26 @@ bool has_mod_dep(const klspw::ModuleData& mod, std::string_view dep_name) {
     }
     return false;
   });
+}
+
+/// Verify referential integrity: every library dep references an existing library,
+/// every module dep references an existing module and is not a self-reference.
+void check_referential_integrity(const klspw::WorkspaceData& ws) {  // NOLINT
+  const auto mod_names = ws.module_names();
+  const auto lib_names = ws.library_names();
+
+  for (const auto& mod : ws.modules) {
+    CAPTURE(mod.name);
+    for (const auto& dep : mod.dependencies) {
+      if (const auto* lib = std::get_if<klspw::LibraryDep>(&dep)) {
+        CHECK_MESSAGE(lib_names.contains(lib->name), "dangling library dep: ", lib->name);
+      }
+      if (const auto* m = std::get_if<klspw::ModuleDep>(&dep)) {
+        CHECK_MESSAGE(mod_names.contains(m->name), "dangling module dep: ", m->name);
+        CHECK_MESSAGE(m->name != mod.name, "self-referencing module dep: ", m->name);
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -120,12 +140,14 @@ TEST_CASE("integration: multi-project build") {
   CHECK(ws.kotlin_settings.size() == 2);
 
   const auto stdlib_count =
-      std::ranges::count_if(ws.libraries, [](const auto& lib) { return lib.name.starts_with("kotlin-stdlib"); });
+      std::ranges::count_if(ws.libraries, [](const auto& lib) { return lib.name.contains("kotlin-stdlib"); });
   CHECK(stdlib_count == 1);
 
   // app depends on :lib — should be promoted to a module dependency
   const auto& app = find_module(ws, "app");
   CHECK(has_mod_dep(app, "lib"));
+
+  check_referential_integrity(ws);
 }
 
 TEST_CASE("integration: multi-root project merges two Gradle roots") {
@@ -137,7 +159,7 @@ TEST_CASE("integration: multi-root project merges two Gradle roots") {
   CHECK(ws.kotlin_settings.size() == 2);
 
   const auto stdlib_count =
-      std::ranges::count_if(ws.libraries, [](const auto& lib) { return lib.name.starts_with("kotlin-stdlib"); });
+      std::ranges::count_if(ws.libraries, [](const auto& lib) { return lib.name.contains("kotlin-stdlib"); });
   CHECK(stdlib_count == 1);
 
   for (const auto& mod : ws.modules) {
@@ -145,6 +167,8 @@ TEST_CASE("integration: multi-root project merges two Gradle roots") {
     CHECK(has_inherited_sdk(mod));
     CHECK(has_module_source(mod));
   }
+
+  check_referential_integrity(ws);
 }
 
 TEST_CASE("integration: write_workspace produces valid deserializable JSON") {
@@ -191,6 +215,8 @@ TEST_CASE("integration: discover multi-root and build workspace") {
   CHECK(std::ranges::any_of(ws.modules, [](const auto& m) { return m.name == "core"; }));
   CHECK(std::ranges::any_of(ws.modules, [](const auto& m) { return m.name == "service"; }));
   CHECK(ws.kotlin_settings.size() == 2);
+
+  check_referential_integrity(ws);
 }
 
 TEST_CASE("integration: kmp multi-module project") {
@@ -226,4 +252,25 @@ TEST_CASE("integration: kmp multi-module project") {
 
   // KotlinSettings should exist for both modules
   CHECK(ws.kotlin_settings.size() == 2);
+
+  check_referential_integrity(ws);
+}
+
+TEST_CASE("integration: project with kotlinx-serialization plugin") {
+  const auto ws = build_fixture("with-serialization");
+
+  REQUIRE(ws.modules.size() == 1);
+  const auto& mod = find_module(ws, "with-serialization");
+  const auto& ks = find_kotlin_settings(ws, "with-serialization");
+
+  // Should have kotlinx-serialization-json on the classpath.
+  CHECK(has_lib_dep(mod, "kotlinx-serialization"));
+  CHECK(has_library(ws, "kotlinx-serialization"));
+
+  // compilerArguments should include the serialization compiler plugin jar.
+  REQUIRE(ks.compiler_arguments.has_value());
+  CHECK(ks.compiler_arguments->contains("pluginClasspaths"));
+  CHECK(ks.compiler_arguments->contains("kotlin-serialization-compiler-plugin"));
+
+  check_referential_integrity(ws);
 }

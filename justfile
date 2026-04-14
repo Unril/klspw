@@ -74,9 +74,6 @@ integration: integration-build
 cov-build := "build/coverage"
 cov-dir := cov-build + "/coverage"
 
-# All instrumented test binaries. Add new test targets here.
-cov-objects := cov-build + "/klspw_tests " + "-object " + cov-build + "/config_test " + "-object " + cov-build + "/gradle_test " + "-object " + cov-build + "/workspace_json_test"
-
 coverage-clean:
     rm -rf {{ cov-dir }}
 
@@ -94,19 +91,23 @@ coverage-merge: coverage-run
     llvm-profdata merge -sparse {{ cov-dir }}/*.profraw -o {{ cov-dir }}/coverage.profdata
 
 coverage-report: coverage-merge
+    #!/usr/bin/env bash
+    objects=$(find {{ cov-build }} -maxdepth 1 -name '*_test*' -perm +111 -type f | sort | awk 'NR==1{printf "%s",$0} NR>1{printf " -object %s",$0}')
     llvm-cov report \
-        {{ cov-objects }} \
+        $objects \
         -instr-profile={{ cov-dir }}/coverage.profdata \
         -ignore-filename-regex='(vcpkg_installed|doctest|_deps|test/)'
 
 coverage-html: coverage-merge
+    #!/usr/bin/env bash
+    objects=$(find {{ cov-build }} -maxdepth 1 -name '*_test*' -perm +111 -type f | sort | awk 'NR==1{printf "%s",$0} NR>1{printf " -object %s",$0}')
     llvm-cov show \
-        {{ cov-objects }} \
+        $objects \
         -instr-profile={{ cov-dir }}/coverage.profdata \
         -ignore-filename-regex='(vcpkg_installed|doctest|_deps|test/)' \
         -format=html \
         -output-dir={{ cov-dir }}/html
-    @echo "HTML report: {{ cov-dir }}/html/index.html"
+    echo "HTML report: {{ cov-dir }}/html/index.html"
 
 coverage: coverage-report coverage-html
     @echo "Report dir: {{ cov-dir }}/html"

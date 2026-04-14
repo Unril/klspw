@@ -43,6 +43,30 @@ void d_trace(spdlog::format_string_t<detail::eval_t<Args>...> fmt, Args&&... arg
   }
 }
 
+/// Log at warn level with lazy arg evaluation.
+template <typename... Args>
+void d_warn(spdlog::format_string_t<detail::eval_t<Args>...> fmt, Args&&... args) {
+  if (spdlog::should_log(spdlog::level::warn)) {
+    spdlog::warn(fmt, detail::eval(std::forward<Args>(args))...);
+  }
+}
+
+/// Log at error level with lazy arg evaluation.
+template <typename... Args>
+void d_error(spdlog::format_string_t<detail::eval_t<Args>...> fmt, Args&&... args) {
+  if (spdlog::should_log(spdlog::level::err)) {
+    spdlog::error(fmt, detail::eval(std::forward<Args>(args))...);
+  }
+}
+
+/// Log at critical level with lazy arg evaluation.
+template <typename... Args>
+void d_critical(spdlog::format_string_t<detail::eval_t<Args>...> fmt, Args&&... args) {
+  if (spdlog::should_log(spdlog::level::critical)) {
+    spdlog::critical(fmt, detail::eval(std::forward<Args>(args))...);
+  }
+}
+
 /// Describe a single element.
 template <Describable T>
 void d_describe(const T& item) {

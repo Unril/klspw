@@ -119,3 +119,86 @@ TEST_CASE("find_dirs_with_markers throws on empty markers") {
   CHECK_THROWS_WITH_AS(find_dirs_with_markers(root.path, {}), doctest::Contains("at least one marker"),
                        std::runtime_error);
 }
+
+// --- read_file / write_file ---
+
+TEST_CASE("write_file and read_file round-trip") {
+  const TempDir dir;
+  const auto p = dir.path / "test_rw.txt";
+
+  klspw::write_file(p, "hello world");
+  CHECK(klspw::read_file(p) == "hello world");
+}
+
+TEST_CASE("write_file creates file with binary content") {
+  const TempDir dir;
+  const auto p = dir.path / "binary_test.bin";
+  const std::string binary_data = {'\x00', '\x01', '\x02', '\xff'};
+
+  klspw::write_file(p, binary_data);
+  CHECK(klspw::read_file(p) == binary_data);
+}
+
+TEST_CASE("read_file throws on empty path") {
+  CHECK_THROWS_WITH_AS(klspw::read_file(""), doctest::Contains("empty path"), std::runtime_error);
+}
+
+TEST_CASE("write_file throws on empty path") {
+  CHECK_THROWS_WITH_AS(klspw::write_file("", "data"), doctest::Contains("empty path"), std::runtime_error);
+}
+
+TEST_CASE("read_file throws on nonexistent file") {
+  CHECK_THROWS_WITH_AS(klspw::read_file("/tmp/klspw_nonexistent_file_xyz.txt"),
+                       doctest::Contains("Cannot determine file size"), std::runtime_error);
+}
+
+// --- find_dir / find_file ---
+
+TEST_CASE("find_dir finds directory matching suffix") {
+  const TempDir dir;
+  fs::create_directories(dir.path / "a" / "b" / "target-dir");
+
+  const auto result = klspw::find_dir(dir.path, "target-dir");
+  REQUIRE(result.has_value());
+  CHECK(result->string().ends_with("target-dir"));
+}
+
+TEST_CASE("find_dir matches multi-component suffix") {
+  const TempDir dir;
+  fs::create_directories(dir.path / "src" / "main" / "java");
+
+  const auto result = klspw::find_dir(dir.path, "/main/java");
+  REQUIRE(result.has_value());
+  CHECK(result->string().ends_with("/main/java"));
+}
+
+TEST_CASE("find_dir returns nullopt when no match") {
+  const TempDir dir;
+  fs::create_directories(dir.path / "empty");
+
+  CHECK_FALSE(klspw::find_dir(dir.path, "nonexistent").has_value());
+}
+
+TEST_CASE("find_file finds regular file matching suffix") {
+  const TempDir dir;
+  fs::create_directories(dir.path / "nested");
+  klspw::write_file(dir.path / "nested" / "lib-1.0-sources.jar", "");
+
+  const auto result = klspw::find_file(dir.path, "-sources.jar");
+  REQUIRE(result.has_value());
+  CHECK(result->string().ends_with("-sources.jar"));
+}
+
+TEST_CASE("find_file ignores directories with matching name") {
+  const TempDir dir;
+  fs::create_directories(dir.path / "fake-sources.jar");  // directory, not file
+
+  CHECK_FALSE(klspw::find_file(dir.path, "-sources.jar").has_value());
+}
+
+TEST_CASE("find_dir ignores files with matching name") {
+  const TempDir dir;
+  klspw::write_file(dir.path / "target-dir", "");  // file, not directory
+
+  CHECK_FALSE(klspw::find_dir(dir.path, "target-dir").has_value());
+}
