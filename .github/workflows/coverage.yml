@@ -66,7 +66,8 @@ jobs:
 
       - name: Generate coverage report
         run: |
-          mapfile -t bins < <(find build/coverage -maxdepth 1 -name '*_test*' -perm +111 -type f | sort)
+          bins=()
+          while IFS= read -r f; do bins+=("$f"); done < <(find build/coverage -maxdepth 1 -name '*_test*' -perm +111 -type f | sort)
           if [ ${#bins[@]} -eq 0 ]; then
             echo "::error::No test binaries found"
             exit 1
