@@ -3,11 +3,12 @@
 # ///
 """Resolve GitHub Actions tags to commit SHAs and check dependency pinning.
 
-Reports:
-  - Currently pinned actions in .github/workflows/
-  - vcpkg version consistency (vcpkg-configuration.json baseline vs workflow clones)
-  - Docker image digest pinning in Dockerfiles
-  - Latest available tags for each action
+Default (no args): compare pinned actions against latest and report updates needed.
+
+Options:
+  --update  Apply updates to workflow files in place
+  --full    Full report: pinned actions, vcpkg consistency, Docker pins, latest tags
+  REPO      Resolve a single action repo (e.g. actions/checkout)
 """
 
 import argparse
@@ -86,19 +87,26 @@ def latest_tags(repo: str, count: int, pattern: str = "refs/tags/v*") -> list[st
 # --- scanning ---
 
 
-def scan_pinned_actions() -> list[tuple[str, str]]:
-    """Scan workflows for pinned actions and their version comments."""
-    pattern = re.compile(r"uses:\s+([^@]+)@\S+\s+#\s+(.+)")
-    results: set[tuple[str, str]] = set()
+def scan_pinned_actions() -> dict[str, tuple[str, str]]:
+    """Scan workflows for pinned actions. Returns {repo: (sha, version_comment)}."""
+    pattern = re.compile(r"uses:\s+([^@]+)@(\S+)\s+#\s+(.+)")
+    results: dict[str, tuple[str, str]] = {}
     workflows = ROOT / ".github" / "workflows"
     if not workflows.is_dir():
-        return []
+        return {}
     for f in sorted(workflows.glob("*.yml")):
         for line in f.read_text().splitlines():
             m = pattern.search(line)
             if m:
-                results.add((m.group(1).strip(), m.group(2).strip()))
-    return sorted(results)
+                repo = m.group(1).strip()
+                sha = m.group(2).strip()
+                version = m.group(3).strip()
+                # Normalize sub-actions to repo level.
+                parts = repo.split("/")
+                if (len(parts) > 2 and parts[0] != "google") or len(parts) > 3:
+                    repo = "/".join(parts[:2])
+                results[repo] = (sha, version)
+    return results
 
 
 def discover_action_repos() -> list[str]:
@@ -248,12 +256,118 @@ def print_action(repo: str, count: int) -> None:
     print()
 
 
+def check_updates(apply: bool = False) -> None:
+    """Compare pinned actions against latest. If apply=True, rewrite workflow files."""
+    pinned = scan_pinned_actions()
+    if not pinned:
+        print("No pinned actions found.")
+        return
+
+    # Build update map: {repo: (old_sha, old_tag, new_sha, new_tag)}.
+    updates: dict[str, tuple[str, str, str, str]] = {}
+    up_to_date: list[str] = []
+
+    for repo, (current_sha, current_version) in sorted(pinned.items()):
+        tags = latest_tags(repo, 1)
+        if not tags:
+            continue
+        latest_tag = tags[0]
+        latest_sha = resolve_sha(repo, latest_tag)
+        if current_sha == latest_sha:
+            up_to_date.append(f"  {repo:<50} {current_version} (up to date)")
+        else:
+            updates[repo] = (current_sha, current_version, latest_sha, latest_tag)
+
+    if updates:
+        print(f"{len(updates)} action(s) can be updated:\n")
+        for repo, (_, old_tag, new_sha, new_tag) in sorted(updates.items()):
+            print(f"  {repo:<50} {old_tag} -> {new_tag}")
+            print(f"    uses: {repo}@{new_sha} # {new_tag}")
+        print()
+    else:
+        print("All actions are up to date.\n")
+
+    if up_to_date:
+        print(f"{len(up_to_date)} action(s) up to date:\n")
+        for u in up_to_date:
+            print(u)
+        print()
+
+    if apply and updates:
+        apply_updates(updates)
+
+
+def apply_updates(updates: dict[str, tuple[str, str, str, str]]) -> None:
+    """Rewrite workflow files, replacing old SHA+tag with new ones."""
+    workflows = ROOT / ".github" / "workflows"
+    if not workflows.is_dir():
+        return
+
+    # Build regex replacements: match uses: {repo_or_sub}@{old_sha} # {old_tag}
+    # and replace with uses: {repo_or_sub}@{new_sha} # {new_tag}.
+    replacements: list[tuple[re.Pattern[str], str]] = []
+    for repo, (old_sha, _, new_sha, new_tag) in updates.items():
+        # Match the repo or any sub-action (e.g., github/codeql-action/init).
+        escaped_repo = re.escape(repo)
+        pattern = re.compile(
+            rf"(uses:\s+{escaped_repo}(?:/\S+)?)@{re.escape(old_sha)}\s+#\s+\S+"
+        )
+        replacement = rf"\1@{new_sha} # {new_tag}"
+        replacements.append((pattern, replacement))
+
+    updated_files: list[str] = []
+    for f in sorted(workflows.glob("*.yml")):
+        content = f.read_text()
+        new_content = content
+        for pattern, replacement in replacements:
+            new_content = pattern.sub(replacement, new_content)
+        if new_content != content:
+            _ = f.write_text(new_content)
+            updated_files.append(str(f.relative_to(ROOT)))
+
+    if updated_files:
+        print(f"Updated {len(updated_files)} file(s):")
+        for f in updated_files:
+            print(f"  {f}")
+    else:
+        print("No files needed updating.")
+
+
+def full_report(count: int) -> None:
+    """Print full report: pinned, vcpkg, docker, latest available."""
+    pinned = scan_pinned_actions()
+    if pinned:
+        print("=== Currently pinned in .github/workflows/ ===")
+        print()
+        for repo, (_sha, version) in sorted(pinned.items()):
+            print(f"  {repo:<50} {version}")
+        print()
+
+    check_vcpkg()
+    check_docker_pins()
+
+    print("=== Latest available ===")
+    print()
+    for repo in discover_action_repos():
+        print_action(repo, count)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Resolve GitHub Actions SHAs and check pinning."
     )
     _ = parser.add_argument(
         "-n", type=int, default=1, help="Number of latest tags to show (default: 1)"
+    )
+    _ = parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Show full report (pinned, vcpkg, docker, latest)",
+    )
+    _ = parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update workflow files to latest action versions",
     )
     _ = parser.add_argument("repo", nargs="?", help="Single action repo to resolve")
     _ = parser.add_argument(
@@ -270,22 +384,12 @@ def main() -> None:
         print_action(repo, count)
         return
 
-    # Full report.
-    pinned = scan_pinned_actions()
-    if pinned:
-        print("=== Currently pinned in .github/workflows/ ===")
-        print()
-        for action, version in pinned:
-            print(f"  {action:<50} {version}")
-        print()
+    if cast(bool, args.full):
+        full_report(count)
+        return
 
-    check_vcpkg()
-    check_docker_pins()
-
-    print("=== Latest available ===")
-    print()
-    for repo in discover_action_repos():
-        print_action(repo, count)
+    # Default: check for updates only.
+    check_updates(apply=cast(bool, args.update))
 
 
 if __name__ == "__main__":

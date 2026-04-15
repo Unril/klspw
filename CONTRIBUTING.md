@@ -99,7 +99,7 @@ scripts/
 
 ## CI
 
-GitHub Actions workflows automate building, testing, security scanning, and releasing:
+GitHub Actions workflows automate building, testing, security scanning, and releasing. The `master` branch is protected: all CI checks must pass before merging, force push and deletion are disabled.
 
 `ci.yml` runs on every push to `master` and on pull requests. It builds and tests on macOS 26 (arm64 and Intel, both using Xcode 26.4) and Ubuntu 24.04 (GCC 15). The workflow uses the `release` CMake preset with vcpkg for dependency management. Cached vcpkg binaries speed up repeat runs. After building, it installs into a staging directory and runs a smoke test (`--version` + `init` on a fixture project).
 
@@ -119,16 +119,27 @@ Homebrew bottles (prebuilt binaries) are built by the [homebrew-tap](https://git
 
 ## Publishing a release
 
+The `master` branch has protection rules: required CI status checks, no force push, no deletion. All changes go through PRs.
+
 1. Update the version in `CMakeLists.txt` (`project(klspw VERSION x.y.z ...)`) and `vcpkg.json`.
-2. Commit, tag, and push:
+2. Push to a feature branch and open a PR:
 
    ```bash
+   git push -u origin master:release/v0.2.0
+   gh pr create --base master --head release/v0.2.0
+   ```
+
+3. Wait for CI to pass, then merge the PR.
+4. Tag the merge commit on master and push the tag:
+
+   ```bash
+   git checkout master && git pull
    git tag v0.2.0
    git push origin v0.2.0
    ```
 
-3. The `release.yml` workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release.
-4. The `update-tap.yml` workflow automatically opens a PR against the [homebrew-tap](https://github.com/Unril/homebrew-tap) with the updated formula. Label the PR `pr-pull` to trigger bottle builds and publishing.
+5. The `release.yml` workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release.
+6. The `update-tap.yml` workflow automatically opens a PR against the [homebrew-tap](https://github.com/Unril/homebrew-tap) with the updated formula. Label the PR `pr-pull` to trigger bottle builds and publishing.
 
 Users can verify the provenance of downloaded release binaries:
 
