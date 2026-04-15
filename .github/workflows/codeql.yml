@@ -3,8 +3,16 @@ name: CodeQL
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "**.md"
+      - ".kiro/**"
+      - "scripts/**"
   pull_request:
     branches: [master]
+    paths-ignore:
+      - "**.md"
+      - ".kiro/**"
+      - "scripts/**"
   schedule:
     - cron: "30 3 * * 6"
   workflow_dispatch:

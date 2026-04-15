@@ -3,6 +3,15 @@ name: Fuzzing
 on:
   pull_request:
     branches: [master]
+    paths:
+      - "include/**"
+      - "src/**"
+      - "fuzz/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "vcpkg.json"
+      - "vcpkg-configuration.json"
+      - ".clusterfuzzlite/**"
   workflow_dispatch:
 
 permissions:

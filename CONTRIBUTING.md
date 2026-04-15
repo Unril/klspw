@@ -105,17 +105,17 @@ GitHub Actions workflows automate building, testing, security scanning, and rele
 
 `release.yml` triggers when a `v*` tag is pushed. It builds release binaries for macOS arm64, macOS x86_64, and Linux x86_64, packages them as `.tar.gz` archives, generates [artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for supply-chain integrity, and uploads them to a GitHub Release with auto-generated notes.
 
-`codeql.yml` runs CodeQL static analysis on pushes to `master`, pull requests, and weekly. It scans both C++ source code (manual build with GCC 15 on Ubuntu) and GitHub Actions workflow files.
+`codeql.yml` runs CodeQL static analysis on pushes to `master`, pull requests, and weekly. It scans both C++ source code (manual build with GCC 15 on Ubuntu) and GitHub Actions workflow files. Skips runs triggered by changes to markdown files, `.kiro/` steering, and `scripts/`.
 
 `dependency-review.yml` runs on pull requests and flags newly introduced vulnerable dependencies or license violations.
 
 `scorecard.yml` runs the [OpenSSF Scorecard](https://scorecard.dev) analysis weekly and on pushes to `master`, publishing results to the code scanning dashboard.
 
-`fuzzing.yml` runs [ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) on pull requests, fuzzing the YAML config parser and Gradle output parser with AddressSanitizer for 5 minutes per run.
+`fuzzing.yml` runs [ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) on pull requests, only when source, fuzz, or build files change. Fuzzes the YAML config parser and Gradle output parser with AddressSanitizer for 5 minutes per run.
 
-`update-tap.yml` triggers when a GitHub Release is published (or manually via `workflow_dispatch`). It computes the source tarball sha256, checks out the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo, updates the formula URL and sha256 (stripping any stale bottle block), verifies the formula syntax, and opens a PR against the tap. The PR is labeled `pr-pull` by the tap's CI to trigger bottle builds and publishing.
+`update-tap.yml` triggers when a `v*` tag is pushed (or manually via `workflow_dispatch`). It computes the source tarball sha256, checks out the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo, updates the formula URL and sha256 (stripping any stale bottle block), verifies the formula syntax, and opens a PR against the tap.
 
-Homebrew bottles (prebuilt binaries) are built by the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo's own CI workflows using `brew test-bot`.
+Homebrew bottles (prebuilt binaries) are built by the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo's own CI workflows using `brew test-bot`. Label the tap PR `pr-pull` to trigger bottle builds and publishing.
 
 ## Publishing a release
 
@@ -139,7 +139,7 @@ The `master` branch has protection rules: required CI status checks, no force pu
    ```
 
 5. The `release.yml` workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release.
-6. The `update-tap.yml` workflow automatically opens a PR against the [homebrew-tap](https://github.com/Unril/homebrew-tap) with the updated formula. Label the PR `pr-pull` to trigger bottle builds and publishing.
+6. The `update-tap.yml` workflow automatically opens a PR against the [homebrew-tap](https://github.com/Unril/homebrew-tap) with the updated formula. Label the tap PR `pr-pull` to trigger bottle builds and publishing.
 
 Users can verify the provenance of downloaded release binaries:
 
