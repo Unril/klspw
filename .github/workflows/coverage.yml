@@ -62,7 +62,7 @@ jobs:
           LLVM_PROFILE_FILE="build/coverage/coverage/%p-%m.profraw" ctest --preset coverage --output-on-failure
 
       - name: Merge profiles
-        run: llvm-profdata merge -sparse build/coverage/coverage/*.profraw -o build/coverage/coverage/coverage.profdata
+        run: xcrun llvm-profdata merge -sparse build/coverage/coverage/*.profraw -o build/coverage/coverage/coverage.profdata
 
       - name: Generate coverage report
         run: |
@@ -73,12 +73,12 @@ jobs:
           fi
           obj_args=("${bins[0]}")
           for b in "${bins[@]:1}"; do obj_args+=("-object" "$b"); done
-          llvm-cov export \
+          xcrun llvm-cov export \
               "${obj_args[@]}" \
               -instr-profile=build/coverage/coverage/coverage.profdata \
               -ignore-filename-regex='(vcpkg_installed|doctest|_deps|test/)' \
               -format=lcov > build/coverage/coverage/lcov.info
-          llvm-cov report \
+          xcrun llvm-cov report \
               "${obj_args[@]}" \
               -instr-profile=build/coverage/coverage/coverage.profdata \
               -ignore-filename-regex='(vcpkg_installed|doctest|_deps|test/)'
