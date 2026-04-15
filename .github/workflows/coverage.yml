@@ -1,0 +1,103 @@
+name: Coverage
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.4.app/Contents/Developer
+          c++ --version
+
+      - name: Create vcpkg binary cache dir
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key:
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg2-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json',
+            '**/CMakeLists.txt', 'CMakePresets.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg2-
+
+      - name: Acquire vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout 401bb04e16e1ae03fdbec04edea4e52c93e9aeb5
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Configure
+        run: cmake --preset coverage
+
+      - name: Build
+        run: cmake --build --preset coverage --parallel
+
+      - name: Run tests with coverage
+        run: |
+          mkdir -p build/coverage/coverage
+          LLVM_PROFILE_FILE="build/coverage/coverage/%p-%m.profraw" ctest --preset coverage --output-on-failure
+
+      - name: Merge profiles
+        run: llvm-profdata merge -sparse build/coverage/coverage/*.profraw -o build/coverage/coverage/coverage.profdata
+
+      - name: Generate coverage report
+        run: |
+          mapfile -t bins < <(find build/coverage -maxdepth 1 -name '*_test*' -perm +111 -type f | sort)
+          if [ ${#bins[@]} -eq 0 ]; then
+            echo "::error::No test binaries found"
+            exit 1
+          fi
+          obj_args=("${bins[0]}")
+          for b in "${bins[@]:1}"; do obj_args+=("-object" "$b"); done
+          llvm-cov export \
+              "${obj_args[@]}" \
+              -instr-profile=build/coverage/coverage/coverage.profdata \
+              -ignore-filename-regex='(vcpkg_installed|doctest|_deps|test/)' \
+              -format=lcov > build/coverage/coverage/lcov.info
+          llvm-cov report \
+              "${obj_args[@]}" \
+              -instr-profile=build/coverage/coverage/coverage.profdata \
+              -ignore-filename-regex='(vcpkg_installed|doctest|_deps|test/)'
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          files: build/coverage/coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-logs-${{ github.run_attempt }}
+          path: |
+            build/coverage/vcpkg-manifest-install.log
+            build/coverage/Testing/Temporary/LastTest.log
+            build/coverage/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: ignore
+          retention-days: 5

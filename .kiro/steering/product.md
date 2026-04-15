@@ -17,7 +17,9 @@ It targets repositories where the default kotlin-lsp project import fails -- whe
 9. Attaches source jars from Gradle-resolved mappings, filesystem discovery, and coordinate-based cache search
 10. Injects kotlin-native-stubs.jar for KMP projects (provides JVM stubs for `kotlin.native.*` annotations)
 11. Includes Kotlin compiler plugin classpaths (serialization, compose) in compiler arguments
-12. Writes deterministic, pretty-printed `workspace.json`
+12. For composite builds (`includeBuild` with `dependencySubstitution`), detects cross-root project dependencies via `ProjectComponentIdentifier` in resolved artifacts
+13. Discovers databinding generated source directories (`data_binding_base_class_source_out`)
+14. Writes deterministic, pretty-printed `workspace.json`
 
 ## CLI subcommands
 

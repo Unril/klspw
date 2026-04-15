@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+//
+// SPDX-License-Identifier: MIT
+
 // Fuzz target for klspw Gradle output parsing.
 // Exercises GradleBuildOutput::from_raw_output() with arbitrary input to find
 // crashes or undefined behavior in the delimiter extraction and JSON parser.

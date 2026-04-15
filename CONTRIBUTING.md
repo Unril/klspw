@@ -1,5 +1,28 @@
 # Contributing to klspw
 
+## Developer Certificate of Origin
+
+By contributing to this project, you agree to the
+[Developer Certificate of Origin (DCO)](https://developercertificate.org/).
+You certify that you wrote the contribution or otherwise have the right to
+submit it under the project's MIT license.
+
+Sign off your commits by adding a `Signed-off-by` trailer:
+
+```bash
+git commit -s -m "Add feature X"
+```
+
+This adds a line like `Signed-off-by: Your Name <your@email.com>` to the commit
+message. All commits in a PR must be signed off.
+
+## Test policy
+
+Major new functionality must include tests. Test files mirror source files 1:1
+(e.g., `config.hpp` has `config_test.cpp`). Bug fixes should include a
+regression test when feasible. PRs without tests for new behavior will be asked
+to add them before merging.
+
 ## Build
 
 Prerequisites:
@@ -15,7 +38,7 @@ Commands:
 just configure   # cmake --preset dev
 just build       # cmake --build --preset dev
 just test        # ctest --preset dev
-just check       # all three
+just check       # build + test (configure must be run first)
 just release     # configure + build + test with release preset
 just sanitize    # ASan + UBSan build and test
 just install     # release build + install to /usr/local
@@ -82,7 +105,7 @@ test/
   sources_test.cpp      # JarPath classification and source discovery tests
   integration_test.cpp  # end-to-end tests with real Gradle projects
 resources/
-  init.gradle.kts       # Gradle init script (embedded at build time)
+  init.gradle.kts       # Gradle init script (embedded at configure time)
   stubs/                # Precompiled JVM stubs for KMP-only annotations
 fuzz/
   fuzz_config_yaml.cpp  # fuzz target for YAML config parsing
@@ -117,29 +140,56 @@ GitHub Actions workflows automate building, testing, security scanning, and rele
 
 Homebrew bottles (prebuilt binaries) are built by the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo's own CI workflows using `brew test-bot`. Label the tap PR `pr-pull` to trigger bottle builds and publishing.
 
+`coverage.yml` runs on pushes to `master` and on manual dispatch. It builds with clang source-based coverage instrumentation, runs tests, merges profiles, exports lcov, and uploads to [Codecov](https://codecov.io).
+
+## Updating GitHub Actions SHAs
+
+All workflow files pin actions to full commit SHAs for supply-chain security. Use the resolver script to audit and update them:
+
+```bash
+# Full report: show all actions, their pinned SHAs, and available tags
+./scripts/resolve-action-shas.sh
+
+# Check a single action
+./scripts/resolve-action-shas.sh actions/cache
+
+# Show only the latest 3 tags per action
+./scripts/resolve-action-shas.sh -n 3
+
+# Update all workflow files in-place to the latest SHA for each pinned tag
+./scripts/resolve-action-shas.sh --update
+```
+
+Requires `uv` (Python package runner). The script also checks vcpkg and Docker base image pinning.
+
 ## Publishing a release
 
-The `master` branch has protection rules: required CI status checks, no force push, no deletion. All changes go through PRs.
+The `master` branch has protection rules: required CI status checks, no force push, no deletion. All changes go through PRs. Feature branches are automatically deleted after PR merge.
 
 1. Update the version in `CMakeLists.txt` (`project(klspw VERSION x.y.z ...)`) and `vcpkg.json`.
-2. Push to a feature branch and open a PR:
+2. Update `CHANGELOG.md` with the new version and changes.
+3. Push to a feature branch and open a PR:
 
    ```bash
-   git push -u origin master:release/v0.2.0
+   git checkout -b release/v0.2.0
+   git push -u origin release/v0.2.0
    gh pr create --base master --head release/v0.2.0
    ```
 
-3. Wait for CI to pass, then merge the PR.
-4. Tag the merge commit on master and push the tag:
+4. Wait for CI to pass, then merge the PR.
+5. Tag the merge commit on master with a signed tag and push it:
 
    ```bash
    git checkout master && git pull
-   git tag v0.2.0
+   git tag -s v0.2.0 -m "v0.2.0"
    git push origin v0.2.0
    ```
 
-5. The `release.yml` workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release.
-6. The `update-tap.yml` workflow automatically opens a PR against the [homebrew-tap](https://github.com/Unril/homebrew-tap) with the updated formula. Label the tap PR `pr-pull` to trigger bottle builds and publishing.
+   Signed tags require a GPG or SSH signing key configured in git. See
+   [GitHub's guide on signing tags](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-tags).
+
+6. The `release.yml` workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release.
+7. The `update-tap.yml` workflow automatically opens a PR against the [homebrew-tap](https://github.com/Unril/homebrew-tap) with the updated formula. Label the tap PR `pr-pull` to trigger bottle builds and publishing.
 
 Users can verify the provenance of downloaded release binaries:
 

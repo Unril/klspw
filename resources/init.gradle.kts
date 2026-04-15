@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+//
+// SPDX-License-Identifier: MIT
+
 // init.gradle.kts
 import groovy.json.JsonOutput
 import java.io.File

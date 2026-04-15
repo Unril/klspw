@@ -3,7 +3,7 @@
 [![CI](https://github.com/Unril/klspw/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Unril/klspw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Unril/klspw/badge)](https://scorecard.dev/viewer/?uri=github.com/Unril/klspw)
-[![License](https://img.shields.io/github/license/Unril/klspw)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/Unril/klspw?sort=semver)](https://github.com/Unril/klspw/releases)
 
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon%20%7C%20Intel-black)](https://github.com/Unril/klspw)
@@ -16,7 +16,7 @@ Targets repositories where the default kotlin-lsp project import does not work -
 ## Installation
 
 ```bash
-# Homebrew (macOS)
+# Homebrew (macOS / Linux)
 brew install Unril/tap/klspw
 
 # From source
@@ -119,15 +119,9 @@ options:
 
 Prerequisites: Java 17+ on PATH.
 
-1. Install kotlin-lsp (the language server):
+1. Install the kotlin-lsp extension: download the latest `.vsix` from the [kotlin-lsp releases page](https://github.com/Kotlin/kotlin-lsp/releases), then install it via Extensions > `...` > Install from VSIX. The extension bundles the language server.
 
-   ```bash
-   brew install JetBrains/utils/kotlin-lsp
-   ```
-
-2. Install the editor extension: download the latest `.vsix` from the [kotlin-lsp releases page](https://github.com/Kotlin/kotlin-lsp/releases), then install it via Extensions > `...` > Install from VSIX.
-
-3. Create a klspw config in your Kotlin project root:
+2. Create a klspw config in your Kotlin project root:
 
    ```bash
    klspw -c . init ./my-project
@@ -135,7 +129,7 @@ Prerequisites: Java 17+ on PATH.
 
    Edit `klspw.yaml` if needed (build command, extra roots, options).
 
-4. Generate the workspace:
+3. Generate the workspace:
 
    ```bash
    klspw generate
@@ -143,9 +137,9 @@ Prerequisites: Java 17+ on PATH.
 
    This writes `workspace.json` next to `klspw.yaml`.
 
-5. Open the project folder in VS Code or Kiro. kotlin-lsp detects `workspace.json` and uses it for project import instead of running Gradle itself.
+4. Open the project folder in VS Code or Kiro. kotlin-lsp detects `workspace.json` and uses it for project import instead of running Gradle itself.
 
-6. If you change dependencies or project structure, re-run `klspw generate` and restart the language server with the `Kotlin LSP: Restart` command from the command palette.
+5. If you change dependencies or project structure, re-run `klspw generate` and restart the language server with the `Kotlin LSP: Restart` command from the command palette.
 
 To verify the import worked, check the kotlin-lsp output panel for messages about loaded modules and libraries.
 
