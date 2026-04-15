@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(klspw VERSION 0.1.1 LANGUAGES CXX)
+project(klspw VERSION 0.1.2 LANGUAGES CXX)
 
 # Use ccache when available for faster rebuilds.
 find_program(CCACHE_PROGRAM ccache)

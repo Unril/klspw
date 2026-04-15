@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include "files.hpp"
+#include "gradle.hpp"
 #include "test_common.hpp"
 
 namespace {
@@ -525,6 +526,215 @@ TEST_CASE("promote_module_deps returns promoted count") {
 
   CHECK(count == 2);
   CHECK(ws.libraries.size() == 1);  // only guava remains
+}
+
+// --- composite build (includeBuild) regression ---
+
+TEST_CASE("promote_module_deps promotes composite build project deps via classpath_coordinates") {
+  // Regression: composite builds (includeBuild with dependencySubstitution) produce
+  // classes.jar on the classpath with no Maven coordinates. Without the init script fix,
+  // the library gets named "classes" (the file stem) and can't be matched to a module.
+  // After the fix, classpath_coordinates maps the jar to the project name, and
+  // project_dependencies includes the composite build dep.
+  //
+  // Simulates: Android root depends on KMP root's "impl" module via composite build.
+  // The init script now emits classpath_coordinates: {"/path/classes.jar": "impl"}
+  // and project_dependencies: ["impl"].
+
+  // Build two GradleBuildOutputs (one per root) and merge, like Pipeline does.
+  const auto android_output = klspw::GradleBuildOutput::from_json(R"({
+    "rootProject": "/workspace/AndroidApp",
+    "projects": [{
+      "projectPath": ":",
+      "projectName": "AndroidApp",
+      "projectDir": "/workspace/AndroidApp",
+      "kind": "android",
+      "plugins": [],
+      "sourceSets": [{
+        "name": "debug",
+        "sourceRoots": ["/workspace/AndroidApp/src/main/kotlin"],
+        "javaSourceRoots": [],
+        "resourcesRoots": [],
+        "classesDirs": [],
+        "resourcesDir": null,
+        "compileClasspath": [
+          "/workspace/KMP/impl/build/intermediates/classes.jar",
+          "/workspace/KMP/public/build/intermediates/classes.jar",
+          "/cache/guava-33.0.jar"
+        ],
+        "runtimeClasspath": [],
+        "classpathCoordinates": {
+          "/workspace/KMP/impl/build/intermediates/classes.jar": "impl",
+          "/workspace/KMP/public/build/intermediates/classes.jar": "public"
+        },
+        "compileClasspathConfigurationName": "debugCompileClasspath",
+        "runtimeClasspathConfigurationName": "debugRuntimeClasspath"
+      }],
+      "projectDependencies": ["AndroidApp", "impl", "public"]
+    }]
+  })");
+
+  const auto kmp_output = klspw::GradleBuildOutput::from_json(R"({
+    "rootProject": "/workspace/KMP",
+    "projects": [
+      {
+        "projectPath": ":impl",
+        "projectName": "impl",
+        "projectDir": "/workspace/KMP/impl",
+        "kind": "kmp-android",
+        "plugins": [],
+        "sourceSets": [{
+          "name": "debug",
+          "sourceRoots": ["/workspace/KMP/impl/src/commonMain/kotlin", "/workspace/KMP/impl/src/androidMain/kotlin"],
+          "javaSourceRoots": [],
+          "resourcesRoots": [],
+          "classesDirs": [],
+          "resourcesDir": null,
+          "compileClasspath": [],
+          "runtimeClasspath": [],
+          "compileClasspathConfigurationName": "",
+          "runtimeClasspathConfigurationName": ""
+        }]
+      },
+      {
+        "projectPath": ":public",
+        "projectName": "public",
+        "projectDir": "/workspace/KMP/public",
+        "kind": "kmp-android",
+        "plugins": [],
+        "sourceSets": [{
+          "name": "debug",
+          "sourceRoots": ["/workspace/KMP/public/src/commonMain/kotlin"],
+          "javaSourceRoots": [],
+          "resourcesRoots": [],
+          "classesDirs": [],
+          "resourcesDir": null,
+          "compileClasspath": [],
+          "runtimeClasspath": [],
+          "compileClasspathConfigurationName": "",
+          "runtimeClasspathConfigurationName": ""
+        }]
+      }
+    ]
+  })");
+
+  constexpr klspw::GenerationOptions opts{.include_tests = false, .remove_missing_paths = false};
+  auto ws = android_output.to_workspace("17", opts);
+  ws.merge(kmp_output.to_workspace("17", opts));
+
+  // Collect project deps from both roots and merge.
+  auto all_project_deps = android_output.collect_project_deps();
+  for (auto&& [k, v] : kmp_output.collect_project_deps()) {
+    all_project_deps[k].merge(std::move(v));
+  }
+
+  // Before promotion: AndroidApp should have library deps named "impl", "public", "guava-33.0".
+  const auto& android_mod = ws.modules[0];
+  CHECK(android_mod.name == "AndroidApp");
+  const auto lib_deps_before = android_mod.dep_count<klspw::LibraryDep>();
+  CHECK(lib_deps_before == 3);
+
+  // Promote.
+  const auto promoted = ws.promote_module_deps(all_project_deps);
+
+  // After promotion: "impl" and "public" should be module deps, "guava-33.0" stays as library.
+  CHECK(promoted == 2);
+
+  const auto& deps = ws.modules[0].dependencies;
+  const auto mod_dep_count = ws.modules[0].dep_count<klspw::ModuleDep>();
+  const auto lib_dep_count = ws.modules[0].dep_count<klspw::LibraryDep>();
+  CHECK(mod_dep_count == 2);
+  CHECK(lib_dep_count == 1);
+
+  CHECK(std::ranges::any_of(deps, [](const auto& d) {
+    const auto* m = std::get_if<klspw::ModuleDep>(&d);
+    return m && m->name == "impl";
+  }));
+  CHECK(std::ranges::any_of(deps, [](const auto& d) {
+    const auto* m = std::get_if<klspw::ModuleDep>(&d);
+    return m && m->name == "public";
+  }));
+  CHECK(std::ranges::any_of(deps, [](const auto& d) {
+    const auto* l = std::get_if<klspw::LibraryDep>(&d);
+    return l && l->name == "guava-33.0";
+  }));
+}
+
+TEST_CASE("Android databinding generated sources appear in module content roots") {
+  // Regression: databinding generates binding classes in
+  // build/generated/data_binding_base_class_source_out/{variant}/out/
+  // which must be included as source roots for kotlin-lsp to resolve them.
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+    "rootProject": "/workspace/App",
+    "projects": [{
+      "projectPath": ":",
+      "projectName": "App",
+      "projectDir": "/workspace/App",
+      "kind": "android",
+      "plugins": [],
+      "sourceSets": [{
+        "name": "debug",
+        "sourceRoots": [
+          "/workspace/App/build/generated/data_binding_base_class_source_out/debug/out",
+          "/workspace/App/build/generated/ksp/debug",
+          "/workspace/App/src/debug/kotlin",
+          "/workspace/App/src/main/kotlin"
+        ],
+        "javaSourceRoots": [],
+        "resourcesRoots": ["/workspace/App/src/main/res"],
+        "classesDirs": [],
+        "resourcesDir": null,
+        "compileClasspath": [],
+        "runtimeClasspath": [],
+        "compileClasspathConfigurationName": "",
+        "runtimeClasspathConfigurationName": ""
+      }]
+    }]
+  })");
+
+  constexpr klspw::GenerationOptions opts{.include_tests = false, .remove_missing_paths = false};
+  const auto ws = output.to_workspace("17", opts);
+
+  REQUIRE(ws.modules.size() == 1);
+  REQUIRE_FALSE(ws.modules[0].content_roots.empty());
+  const auto& roots = ws.modules[0].content_roots[0].source_roots;
+
+  // The databinding dir should be present as a java-source root.
+  const auto has_databinding = std::ranges::any_of(roots, [](const auto& r) {
+    return r.path.contains("data_binding_base_class_source_out") && r.type == "java-source";
+  });
+  CHECK(has_databinding);
+}
+
+TEST_CASE("SourceSet::jar_library_name uses classpath_coordinates for project names") {
+  // Verify that classpath_coordinates with bare project names (no ':') work correctly.
+  const auto output = klspw::GradleBuildOutput::from_json(R"({
+    "rootProject": "/tmp/proj",
+    "projects": [{
+      "projectPath": ":",
+      "projectDir": "/tmp/proj",
+      "kind": "android",
+      "plugins": [],
+      "sourceSets": [{
+        "name": "debug",
+        "sourceRoots": [],
+        "javaSourceRoots": [],
+        "resourcesRoots": [],
+        "classesDirs": [],
+        "resourcesDir": null,
+        "compileClasspath": ["/other/build/intermediates/classes.jar"],
+        "runtimeClasspath": [],
+        "classpathCoordinates": {
+          "/other/build/intermediates/classes.jar": "impl"
+        },
+        "compileClasspathConfigurationName": "",
+        "runtimeClasspathConfigurationName": ""
+      }]
+    }]
+  })");
+
+  const auto& ss = output.projects[0].source_sets[0];
+  CHECK(ss.jar_library_name("/other/build/intermediates/classes.jar") == "impl");
 }
 
 // --- describe ---
