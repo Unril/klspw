@@ -1,8 +1,9 @@
 name: Update Homebrew Tap
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -28,7 +29,12 @@ jobs:
         run: |
           VERSION="${TAG#v}"
           URL="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG.tar.gz"
-          SHA256=$(curl -fsSL "$URL" | shasum -a 256 | cut -d' ' -f1)
+          for i in 1 2 3 4 5; do
+            SHA256=$(curl -fsSL "$URL" | shasum -a 256 | cut -d' ' -f1) && break
+            echo "Attempt $i: tarball not ready, retrying in 10s..."
+            sleep 10
+          done
+          [ -n "$SHA256" ] || { echo "::error::Failed to download tarball after 5 attempts"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
@@ -51,6 +57,7 @@ jobs:
             formula.sub!(/url ".*"/, %Q{url "#{ENV["URL"]}"})
             formula.sub!(/sha256 "[0-9a-f]{64}"/, %Q{sha256 "#{ENV["SHA256"]}"})
             formula.sub!(/\n  bottle do.*?  end\n/m, "\n")
+            formula.gsub!(/\n{3,}/, "\n\n")
             print formula
           ' Formula/klspw.rb
 
