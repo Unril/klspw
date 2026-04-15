@@ -11,6 +11,7 @@ default.profraw
 vcpkg_installed/
 
 # IDE / editor
+.ruff_cache
 .idea/
 *.swp
 *.swo

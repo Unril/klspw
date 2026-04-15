@@ -427,11 +427,11 @@ TEST_CASE("JarPath: classifier returns empty when no classifier present") {
       "/Users/me/.gradle/caches/modules-2/files-2.1/org.example/mylib/1.0/"
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/mylib-1.0.jar"};
 
-  CHECK(jp.classifier().empty());
+  CHECK_FALSE(jp.classifier().has_value());
 }
 
-TEST_CASE("JarPath: classifier returns empty for non-Gradle-cache jars") {
-  CHECK(JarPath{"/workspace/build/libs/foo-1.0-sources.jar"}.classifier().empty());
+TEST_CASE("JarPath: classifier returns nullopt for non-Gradle-cache jars") {
+  CHECK_FALSE(JarPath{"/workspace/build/libs/foo-1.0-sources.jar"}.classifier().has_value());
 }
 
 TEST_CASE("JarPath: library_name includes classifier when present") {

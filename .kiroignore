@@ -1,4 +1,5 @@
 # Build artifacts — large and not useful for agent context
+.ruff_cache
 build/
 vcpkg_installed/
 .gradle/

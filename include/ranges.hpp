@@ -71,4 +71,44 @@ constexpr auto to_set() {
   }
 }
 
+/// Concatenate multiple ranges into a single vector.
+/// Element type is deduced from the first range.
+/// Usage: concat_to_vector(range1 | v::transform(f), range2 | v::filter(g))
+template <r::input_range First, r::input_range... Rest>
+auto concat_to_vector(First&& first, Rest&&... rest) {
+  auto result = std::forward<First>(first) | to_vector();
+  (result.append_range(std::forward<Rest>(rest)), ...);
+  return result;
+}
+
+/// A callable that maps a value to an optional result.
+template <typename Fn, typename Elem>
+concept OptionalMapper = requires(Fn fn, Elem elem) {
+  { fn(elem) } -> std::same_as<optional<typename std::invoke_result_t<Fn, Elem>::value_type>>;
+};
+
+/// find_map(range, fn) -- apply fn to each element, return the first non-empty optional.
+/// Equivalent to Rust's Iterator::find_map. fn must return optional<T>.
+template <r::input_range R, OptionalMapper<r::range_value_t<R>> Fn>
+auto find_map(R&& range, Fn fn) {
+  using Result = std::invoke_result_t<Fn, r::range_value_t<R>>;
+  for (auto&& elem : std::forward<R>(range)) {
+    if (auto result = fn(elem)) {
+      return result;
+    }
+  }
+  return Result{};
+}
+
+/// find_opt(range, pred) -- like r::find_if but returns optional<value> instead of iterator.
+template <r::input_range R, typename Pred>
+  requires std::predicate<Pred, const r::range_value_t<R>&>
+auto find_opt(R&& range, Pred pred) -> optional<r::range_value_t<R>> {
+  const auto it = r::find_if(std::forward<R>(range), pred);
+  if (it != r::end(range)) {
+    return *it;
+  }
+  return nullopt;
+}
+
 }  // namespace klspw

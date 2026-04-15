@@ -29,6 +29,7 @@
 #include "common.hpp"
 #include "describe.hpp"
 #include "files.hpp"
+#include "ranges.hpp"
 #include "strings.hpp"
 #include "validate.hpp"
 
@@ -60,7 +61,7 @@ struct BuildConfig {
     strings args;
     args.append_range(command);
     args.emplace_back("--no-configuration-cache");
-    args.insert(args.end(), {"--init-script", init_script.string()});
+    args.append_range(std::array{"--init-script"s, init_script.string()});
     args.append_range(gradle_args);
     args.emplace_back(gradle_task);
     return args;
@@ -74,13 +75,16 @@ struct BuildConfig {
     ctx.check(has_commands(), "BuildConfig missing required field: command");
   }
 
-  void describe() const { d_debug("  build: {} {}", join(command), join(gradle_args)); }
+  void describe() const { d_debug("  build: {} {}", command | join_to_string(), gradle_args | join_to_string()); }
 };
 
 /// A project root to process. Optionally overrides the global build config.
 struct RootEntry {
   string path;  ///< Relative or absolute path to the Gradle root project directory.
   optional<BuildConfig> build;  ///< Per-root build override. Absent = inherit global.
+
+  /// Create a root entry from a pre-computed relative path string (no build override).
+  static RootEntry from_path(string rel_path) { return {.path = std::move(rel_path)}; }
 
   bool has_build() const { return build.has_value(); }
 
@@ -91,7 +95,7 @@ struct RootEntry {
 
   void describe() const {
     if (has_build()) {
-      d_debug("  root: {} (build: {})", path, join(build->command));
+      d_debug("  root: {} (build: {})", path, build->command | join_to_string());
     } else {
       d_debug("  root: {}", path);
     }
@@ -101,7 +105,7 @@ struct RootEntry {
 /// Plain YAML-deserializable config data. Never mutated after deserialization.
 struct ConfigData {
   int version = 0;  ///< Config schema version (must be 1).
-  string workspace_file;  ///< Output workspace.json path (relative to config dir). Optional.
+  opt_string workspace_file;  ///< Output workspace.json path (relative to config dir). Optional.
   string jvm_target = "21";  ///< JVM target version for kotlin-lsp compilerArguments.
   optional<BuildConfig> build;  ///< Global build command and Gradle args. Optional.
   vector<RootEntry> roots;  ///< Gradle root projects to process (at least one required).
@@ -109,19 +113,21 @@ struct ConfigData {
 
   void describe() const {
     d_info("  {} root(s), jvm_target={}, workspace_file={}", roots.size(), jvm_target,
-           has_workspace_file() ? workspace_file : "(not set)");
+           workspace_file.value_or("(not set)"));
     d_describe(build);
     d_describe(roots);
   }
 
-  bool has_workspace_file() const { return !workspace_file.empty(); }
+  bool has_workspace_file() const { return workspace_file.has_value(); }
+
+  bool has_roots() const { return !roots.empty(); }
 
   void validate(ValidateContext& ctx) const {
     ctx.check(version != 0, "Config missing required field: version");
     if (version != 0) {
       ctx.check(version == 1, format("Unsupported config version: {}", version));
     }
-    ctx.check(!roots.empty(), "Config missing required field: roots");
+    ctx.check(has_roots(), "Config missing required field: roots");
     ctx.validate(build);
     ctx.validate(roots);
     if (!ctx.schema_only()) {
@@ -181,6 +187,36 @@ inline path resolve_config_path(const path& path) {
   return fs::is_directory(path) ? path / default_config_filename : path;
 }
 
+/// The directory containing the config file. Provides path resolution and relativization.
+class ConfigDir {
+ public:
+  /// From a config file path argument: resolve to concrete file, take parent directory.
+  static ConfigDir from_config_path(const path& config_path) {
+    return ConfigDir{fs::weakly_canonical(resolve_config_path(config_path)).parent_path()};
+  }
+
+  /// Resolve a relative path against this config directory.
+  path resolve(const string& relative) const { return (dir_ / relative).lexically_normal(); }
+
+  /// Make an absolute path relative to this config directory, prefixed with "./".
+  string relativize(const path& absolute) const { return "./" + absolute.lexically_relative(dir_).string(); }
+
+  /// Create a RootEntry with a path relative to this directory.
+  RootEntry make_root(const path& absolute) const { return {.path = relativize(absolute)}; }
+
+  /// Rebase a RootEntry from this directory to another.
+  RootEntry rebase_root(const RootEntry& root, const ConfigDir& new_dir) const {
+    return {.path = new_dir.relativize(resolve(root.path)), .build = root.build};
+  }
+
+  const path& dir() const { return dir_; }
+
+ private:
+  explicit ConfigDir(path dir) : dir_{std::move(dir)} {}
+
+  path dir_;
+};
+
 /// Generates a starter ConfigData for the `init` subcommand.
 ///
 /// Each root arg is "path [build_command...]" -- first word is the directory,
@@ -210,36 +246,48 @@ class StarterConfig {
                                                   "build.gradle.kts"sv};
 
     StarterConfig config;
-    for (const auto& dir : search_dirs) {
-      const auto roots = find_dirs_with_markers(path{dir}, gradle_markers);
-      for (const auto& root : roots) {
-        d_info("Discovered Gradle root: {}", root.string());
-        config.data_.roots.push_back(RootEntry{.path = config.relative_path(root)});
-      }
+    auto to_roots = [&](const path& dir) { return find_dirs_with_markers(dir, gradle_markers); };
+    auto to_entry = [&](const path& root) { return config.config_dir_.make_root(root); };
+
+    config.data_.roots =
+        search_dirs | v::transform(compose(to_path, to_roots)) | v::join | v::transform(to_entry) | to_vector();
+
+    if (config.data_.has_roots()) {
+      d_info("Discovered {} Gradle root(s): {}", config.data_.roots.size(),
+             config.data_.roots | v::transform(&RootEntry::path) | join_to_string(", "));
     }
-    require(!config.data_.roots.empty(), "no Gradle projects found under: {}", join(search_dirs, ", "));
+    require(config.data_.has_roots(), "no Gradle projects found under: {}",
+            [&] { return search_dirs | join_to_string(", "); });
     config.ensure_default_build();
     return config;
   }
 
-  StarterConfig& set_jvm_target(string value) {
-    data_.jvm_target = std::move(value);
+  StarterConfig& with_jvm_target(string value) {
+    if (!value.empty()) {
+      data_.jvm_target = std::move(value);
+    }
     return *this;
   }
 
-  /// Override the global build command. Words are split on spaces.
-  StarterConfig& set_build(string_view command) {
-    data_.build = BuildConfig{.command = split_words(trim(command))};
+  /// Override the global build command. Words are split on spaces. No-op if empty.
+  StarterConfig& with_build(string_view command) {
+    if (const auto trimmed = trim(command); !trimmed.empty()) {
+      data_.build = BuildConfig{.command = split_words(trimmed)};
+    }
     return *this;
   }
 
-  const path& config_path() const { return config_path_; }
+  const opt_path& config_path() const { return config_path_; }
 
-  /// Set config output path. Root paths are rebased relative to the new config directory.
-  StarterConfig& set_config_path(const path& path) {
+  /// Set config output path. Root paths are rebased relative to the new config directory. No-op if empty.
+  StarterConfig& with_config_path(const path& path) {
+    if (path.empty()) {
+      return *this;
+    }
     config_path_ = path;
-    config_dir_ = fs::weakly_canonical(resolve_config_path(path)).parent_path();
-    rebase_roots();
+    const auto old_dir = config_dir_;
+    config_dir_ = ConfigDir::from_config_path(path);
+    rebase_roots(old_dir);
     return *this;
   }
 
@@ -249,8 +297,8 @@ class StarterConfig {
 
   /// Save to a file. config_path can be a directory (appends klspw.yaml) or a file path.
   void save_yaml_file() const {
-    require(!config_path_.empty(), "no config path specified (use to_yaml() for stdout)");
-    const auto resolved = resolve_config_path(config_path_);
+    require(config_path_.has_value(), "no config path specified (use to_yaml() for stdout)");
+    const auto resolved = resolve_config_path(*config_path_);
     write_file(resolved, to_yaml());
     d_info("Wrote config to {}", resolved.string());
   }
@@ -265,40 +313,31 @@ class StarterConfig {
     const auto entry_path = path{words[0]};
     require(fs::is_directory(entry_path), "root path must be an existing directory: {}", entry_path);
 
-    RootEntry entry{.path = relative_path(fs::weakly_canonical(entry_path))};
+    auto entry = config_dir_.make_root(fs::weakly_canonical(entry_path));
 
     if (words.size() > 1) {
-      entry.build = BuildConfig{.command = {words.begin() + 1, words.end()}};
+      entry.build = BuildConfig{.command = words | v::drop(1) | r::to<strings>()};
     }
 
     data_.roots.push_back(std::move(entry));
   }
 
-  string relative_path(const path& absolute) const { return "./" + absolute.lexically_relative(config_dir_).string(); }
-
   /// Add default ./gradlew global build when not all roots have their own.
   void ensure_default_build() {
-    if (!data_.has_build()) {
-      const auto all_have_build = r::all_of(data_.roots, &RootEntry::has_build);
-      if (!all_have_build) {
-        data_.build = BuildConfig{.command = {string(default_gradle_command)}};
-      }
+    if (!data_.has_build() && !r::all_of(data_.roots, &RootEntry::has_build)) {
+      data_.build = BuildConfig{.command = {string(default_gradle_command)}};
     }
   }
 
   /// Recompute root paths relative to the current config_dir.
-  void rebase_roots() {
-    for (auto& root : data_.roots) {
-      const auto abs = (old_config_dir_ / root.path).lexically_normal();
-      root.path = relative_path(abs);
-    }
-    old_config_dir_ = config_dir_;
+  void rebase_roots(const ConfigDir& old_dir) {
+    auto rebase = [&](const RootEntry& root) { return old_dir.rebase_root(root, config_dir_); };
+    data_.roots = data_.roots | v::transform(rebase) | to_vector();
   }
 
   ConfigData data_{.version = 1, .workspace_file = string(default_workspace_file)};
-  path config_path_;
-  path config_dir_ = fs::weakly_canonical(resolve_config_path({})).parent_path();
-  path old_config_dir_ = config_dir_;
+  opt_path config_path_;
+  ConfigDir config_dir_ = ConfigDir::from_config_path({});
 
   /// Default constructor for factory methods.
   StarterConfig() = default;
@@ -321,25 +360,22 @@ class Config {
 
   const path& config_file() const { return config_file_; }
 
-  const path& config_dir() const { return config_dir_; }
+  const path& config_dir() const { return config_dir_.dir(); }
 
   /// Workspace output path resolved against config dir. Empty if not configured.
-  path workspace_file() const {
-    if (data_.has_workspace_file()) {
-      return resolve(data_.workspace_file);
-    }
-    return {};
+  opt_path workspace_file() const {
+    return data_.workspace_file.transform([&](const string& ws) { return config_dir_.resolve(ws); });
   }
 
   /// Root path resolved against config dir.
-  path root_path(const RootEntry& root) const { return resolve(root.path); }
+  path root_path(const RootEntry& root) const { return config_dir_.resolve(root.path); }
 
   /// Validate config data, resolved paths, and build commands.
   void validate(ValidateContext& ctx) const {
     data_.validate(ctx);
 
-    if (const auto ws_file = workspace_file(); !ws_file.empty()) {
-      const auto parent = ws_file.parent_path();
+    if (const auto ws_file = workspace_file()) {
+      const auto parent = ws_file->parent_path();
       ctx.check(parent.empty() || fs::is_directory(parent),
                 format("workspace_file parent does not exist: {}", parent.string()));
     }
@@ -356,17 +392,14 @@ class Config {
   }
 
  private:
-  explicit Config(ConfigData data, const path& config_path) : data_{std::move(data)} {
-    const auto canonical = fs::weakly_canonical(config_path);
-    config_file_ = canonical;
-    config_dir_ = canonical.parent_path();
-  }
-
-  path resolve(const string& relative) const { return (config_dir_ / relative).lexically_normal(); }
+  explicit Config(ConfigData data, const path& config_path)
+      : data_{std::move(data)},
+        config_file_{fs::weakly_canonical(config_path)},
+        config_dir_{ConfigDir::from_config_path(config_path)} {}
 
   ConfigData data_;
   path config_file_;
-  path config_dir_;
+  ConfigDir config_dir_;
 };
 
 }  // namespace klspw

@@ -1,6 +1,10 @@
 #include "strings.hpp"
 
+#include <array>
+
 #include <doctest/doctest.h>
+
+#include "ranges.hpp"
 
 using namespace klspw;
 
@@ -30,23 +34,23 @@ TEST_CASE("trim with only whitespace characters") {
 
 TEST_CASE("trim with tabs is not trimmed") { CHECK(trim("\thello\t") == "\thello\t"); }
 
-// --- join ---
+// --- join_to_string ---
 
-TEST_CASE("join with default separator") {
-  CHECK(join({"a", "b", "c"}) == "a b c");
-  CHECK(join({}) == "");
-  CHECK(join({"single"}) == "single");
+TEST_CASE("join_to_string with default separator") {
+  CHECK((std::array{"a"sv, "b"sv, "c"sv} | join_to_string()) == "a b c");
+  CHECK((std::array<string_view, 0>{} | join_to_string()) == "");
+  CHECK((std::array{"single"sv} | join_to_string()) == "single");
 }
 
-TEST_CASE("join with custom separator") {
-  CHECK(join({"a", "b", "c"}, ", ") == "a, b, c");
-  CHECK(join({"x", "y"}, "::") == "x::y");
-  CHECK(join({"only"}, "--") == "only");
+TEST_CASE("join_to_string with custom separator") {
+  CHECK((std::array{"a"sv, "b"sv, "c"sv} | join_to_string(", ")) == "a, b, c");
+  CHECK((std::array{"x"sv, "y"sv} | join_to_string("::")) == "x::y");
+  CHECK((std::array{"only"sv} | join_to_string("--")) == "only");
 }
 
-TEST_CASE("join with empty strings in parts") {
-  CHECK(join({"", "b", ""}) == " b ");
-  CHECK(join({"", ""}) == " ");
+TEST_CASE("join_to_string with empty strings in parts") {
+  CHECK((std::array{""sv, "b"sv, ""sv} | join_to_string()) == " b ");
+  CHECK((std::array{""sv, ""sv} | join_to_string()) == " ");
 }
 
 // --- extract_between ---
@@ -178,4 +182,38 @@ TEST_CASE("split_words whitespace-only returns empty") { CHECK(klspw::split_word
 
 TEST_CASE("split_words preserves flags") {
   CHECK(klspw::split_words("my_build --quiet --no-daemon") == klspw::strings{"my_build", "--quiet", "--no-daemon"});
+}
+
+// --- MavenCoords::parse ---
+
+TEST_CASE("MavenCoords::parse parses valid coordinates") {
+  const auto coords = klspw::MavenCoords::parse("org.jetbrains:annotations:24.0.0");
+  REQUIRE(coords.has_value());
+  CHECK(coords->group == "org.jetbrains");
+  CHECK(coords->module == "annotations");
+  CHECK(coords->version == "24.0.0");
+}
+
+TEST_CASE("MavenCoords::parse returns nullopt for no colons") {
+  CHECK_FALSE(klspw::MavenCoords::parse("no-colons-here").has_value());
+}
+
+TEST_CASE("MavenCoords::parse returns nullopt for single colon") {
+  CHECK_FALSE(klspw::MavenCoords::parse("group:module").has_value());
+}
+
+TEST_CASE("MavenCoords::parse handles extra colons after version") {
+  const auto coords = klspw::MavenCoords::parse("g:m:1.0:classifier");
+  REQUIRE(coords.has_value());
+  CHECK(coords->group == "g");
+  CHECK(coords->module == "m");
+  CHECK(coords->version == "1.0:classifier");
+}
+
+TEST_CASE("MavenCoords::parse handles empty components") {
+  const auto coords = klspw::MavenCoords::parse("::v");
+  REQUIRE(coords.has_value());
+  CHECK(coords->group.empty());
+  CHECK(coords->module.empty());
+  CHECK(coords->version == "v");
 }

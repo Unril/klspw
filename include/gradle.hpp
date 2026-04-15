@@ -55,9 +55,6 @@ struct SourceSet {
   string compile_classpath_configuration_name;  ///< Gradle configuration name for compile classpath.
   string runtime_classpath_configuration_name;  ///< Gradle configuration name for runtime classpath.
 
-  /// Cached Gradle module cache root directory (lazily discovered from classpath entries).
-  mutable optional<path> gradle_cache_root_;
-
   void describe() const {
     d_info(
         "    source set '{}'{}: {} source root(s), {} compile classpath jar(s), {} source jar "
@@ -134,37 +131,26 @@ struct SourceSet {
     return JarPath{jar}.library_name();
   }
 
-  /// Find sources jar in the Gradle cache by Maven coordinates.
-  /// Extracts the cache root from any Gradle cache jar on this source set's classpath.
-  opt_string find_sources_by_coords(string_view coords) const {
-    if (!gradle_cache_root_.has_value()) {
-      // Lazily discover the Gradle cache root from the first Gradle cache jar on the classpath.
-      for (const auto& jar : compile_classpath) {
-        if (auto root = JarPath::gradle_cache_root(jar)) {
-          gradle_cache_root_ = std::move(*root);
-          break;
-        }
-      }
-    }
-    if (!gradle_cache_root_.has_value()) {
-      return nullopt;
-    }
-    return JarPath::find_sources_by_coordinates(*gradle_cache_root_, coords);
+  /// Discover the Gradle module cache root from the first Gradle cache jar on the classpath.
+  opt_path gradle_cache_root() const {
+    return find_map(compile_classpath, [](const auto& jar) { return JarPath::gradle_cache_root(jar); });
   }
 
   /// Build a LibraryData with source jar attachment.
   /// Prefers Gradle-resolved source mapping, falls back to JarPath filesystem discovery,
   /// then coordinate-based Gradle cache search for AGP transforms.
-  LibraryData library_from_jar_with_sources(string_view jar) const {
-    vector<LibraryRootData> roots{{.path = string{jar}}};
-    if (auto it = source_classpath.find(string{jar}); it != source_classpath.end()) {
+  LibraryData library_from_jar_with_sources(string_view jar, const opt_path& cache_root) const {
+    const auto jar_str = string{jar};
+    vector<LibraryRootData> roots{{.path = jar_str}};
+    if (auto it = source_classpath.find(jar_str); it != source_classpath.end()) {
       roots.push_back({.path = it->second, .type = string(root_type_sources)});
     } else if (auto src = JarPath{jar}.find_sources()) {
       roots.push_back({.path = std::move(*src), .type = string(root_type_sources)});
-    } else if (auto coord_it = classpath_coordinates.find(string{jar}); coord_it != classpath_coordinates.end()) {
-      // AGP transforms: use coordinates to find sources in the Gradle cache.
-      if (auto src = find_sources_by_coords(coord_it->second)) {
-        roots.push_back({.path = std::move(*src), .type = string(root_type_sources)});
+    } else if (cache_root) {
+      if (auto coord_it = classpath_coordinates.find(jar_str); coord_it != classpath_coordinates.end()) {
+        if (auto src = JarPath::find_sources_by_coordinates(*cache_root, coord_it->second)) {
+          roots.push_back({.path = std::move(*src), .type = string(root_type_sources)});
+        }
       }
     }
     return {.name = jar_library_name(jar), .type = string(library_type_imported), .roots = std::move(roots)};
@@ -182,15 +168,14 @@ struct SourceSet {
     const auto res_type = string(is_test() ? source_type_test_resource : source_type_resource);
     auto to_src = [&](const auto& p) -> SourceRootData { return {.path = p, .type = src_type}; };
     auto to_res = [&](const auto& p) -> SourceRootData { return {.path = p, .type = res_type}; };
-    // Exclude resource dirs from source pass -- they're added below as resource-type roots.
-    auto roots = source_roots | not_in(resources_roots) | v::transform(to_src) | to_vector();
-    roots.append_range(resources_roots | v::transform(to_res));
-    return roots;
+    return concat_to_vector(source_roots | not_in(resources_roots) | v::transform(to_src),
+                            resources_roots | v::transform(to_res));
   }
 
   /// Collect libraries from compile classpath with source jar attachment.
   vector<LibraryData> collect_libraries_with_sources() const {
-    auto to_lib = [&](const auto& jar) { return library_from_jar_with_sources(jar); };
+    const auto cache_root = gradle_cache_root();
+    auto to_lib = [&](const auto& jar) { return library_from_jar_with_sources(jar, cache_root); };
     return compile_classpath | v::transform(to_lib) | to_vector();
   }
 
@@ -219,7 +204,7 @@ struct SourceSet {
 /// excluded from workspace generation.
 struct GradleProject {
   string project_path;  ///< Gradle project path (e.g., ":", ":subproject").
-  string project_name;  ///< Gradle project name (from settings.gradle.kts).
+  opt_string project_name;  ///< Gradle project name (from settings.gradle.kts).
   string project_dir;  ///< Absolute path to the project directory.
   string kind;  ///< Project kind (e.g., "jvm", "non-jvm").
   strings plugins;  ///< Applied Gradle plugin class names.
@@ -233,17 +218,21 @@ struct GradleProject {
       d_info("  {} [SKIPPED: {}]", project_path, *skip_reason);
       return;
     }
-    d_info("  {} (name: {}, dir: {}, kind: {}, {} source set(s), {} plugin(s))", project_path, project_name,
-           project_dir, kind, source_sets.size(), plugins.size());
+    d_info("  {} (name: {}, dir: {}, kind: {}, {} source set(s), {} plugin(s))", project_path,
+           project_name.value_or("(unnamed)"), project_dir, kind, source_sets.size(), plugins.size());
     d_describe(source_sets);
   }
 
   bool is_skipped() const { return skip_reason.has_value(); }
 
+  bool has_project_deps() const { return !project_dependencies.empty(); }
+
   /// Gradle project name. Falls back to directory name if not provided (forward compat).
-  string module_name() const { return project_name.empty() ? path{project_dir}.filename().string() : project_name; }
+  string module_name() const { return project_name.value_or(path{project_dir}.filename().string()); }
 
   bool is_android() const { return kind == "android" || kind == "kmp-android"; }
+
+  bool is_kmp() const { return kind == "kmp" || kind == "kmp-android"; }
 
   /// Return source sets to include in the workspace.
   /// For Android projects, picks one main variant (first = debug) and its test variant
@@ -265,31 +254,27 @@ struct GradleProject {
   /// source dirs (src/debug/kotlin, src/release/kotlin) contain different implementations
   /// of the same class. kotlin-lsp doesn't understand Android variants, so we pick one.
   vector<SourceSet> pick_android_variant(const GenerationOptions& opts) const {
-    // Find the first non-test source set (typically "debug").
-    const auto main_it = r::find_if(source_sets, std::not_fn(&SourceSet::is_test));
-    if (main_it == source_sets.end()) {
+    const auto main_set = find_opt(source_sets, std::not_fn(&SourceSet::is_test));
+    if (!main_set) {
       return {};
     }
-    const auto& main_name = main_it->name;  // e.g., "debug"
+    const auto& main_name = main_set->name;  // e.g., "debug"
 
     vector<SourceSet> result;
-    result.push_back(*main_it);
+    result.push_back(*main_set);
 
     if (opts.include_tests) {
-      // Find the matching test variant: "{main_name}UnitTest" (e.g., "debugUnitTest").
-      const auto test_name = main_name + "UnitTest";
-      const auto test_it = r::find(source_sets, test_name, &SourceSet::name);
-      if (test_it != source_sets.end()) {
-        result.push_back(*test_it);
-      }
-      // Also include android-prefixed test variant if present (KMP-android).
-      auto upper_first = string{main_name};
-      upper_first[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(upper_first[0])));
-      const auto android_test_name = "android" + upper_first + "UnitTest";
-      const auto android_test_it = r::find(source_sets, android_test_name, &SourceSet::name);
-      if (android_test_it != source_sets.end()) {
-        result.push_back(*android_test_it);
-      }
+      auto add_variant = [&](string_view test_name) {
+        if (auto ss = find_opt(source_sets, [&](const auto& s) { return s.name == test_name; })) {
+          result.push_back(std::move(*ss));
+        }
+      };
+      // "{main_name}UnitTest" (e.g., "debugUnitTest").
+      add_variant(main_name + "UnitTest");
+      // KMP-android: "android{Main_name}UnitTest" (e.g., "androidDebugUnitTest").
+      auto capitalized = string{main_name};
+      capitalized[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(capitalized[0])));
+      add_variant("android" + capitalized + "UnitTest");
     }
 
     d_debug("  android variant: picked '{}' ({} source set(s) of {})", main_name, result.size(), source_sets.size());
@@ -322,20 +307,9 @@ struct GradleProject {
     if (compiler_plugin_classpath.empty()) {
       return format(R"(J{{"jvmTarget":"{}"}})", jvm_target);
     }
-    // Escape for JSON string values. Only \ and " need escaping for filesystem paths.
-    auto escape_json = [](const string& s) {
-      string result;
-      for (const auto c : s) {
-        if (c == '\\' || c == '"') {
-          result += '\\';
-        }
-        result += c;
-      }
-      return result;
-    };
-    auto to_json_str = [&](const string& s) { return format("\"{}\"", escape_json(s)); };
+    auto to_json_str = [](const string& s) { return format("\"{}\"", escape_json(s)); };
     auto paths = compiler_plugin_classpath | v::transform(to_json_str);
-    return format(R"(J{{"jvmTarget":"{}","pluginClasspaths":[{}]}})", jvm_target, join(paths, ","));
+    return format(R"(J{{"jvmTarget":"{}","pluginClasspaths":[{}]}})", jvm_target, paths | join_to_string(","));
   }
 
   /// Build KotlinSettingsData for this project.
@@ -382,18 +356,19 @@ struct GradleBuildOutput {
     return from_json(*json_str);
   }
 
-  size_t active_project_count() const {
-    return static_cast<size_t>(r::count_if(projects, std::not_fn(&GradleProject::is_skipped)));
-  }
+  /// Lazy view of non-skipped projects. Callers materialize with to_vector() when needed.
+  auto active_projects() const { return projects | v::filter(std::not_fn(&GradleProject::is_skipped)); }
+
+  size_t active_project_count() const { return static_cast<size_t>(r::distance(active_projects())); }
+
+  bool has_kmp_project() const { return r::any_of(active_projects(), &GradleProject::is_kmp); }
 
   /// Collect explicit project dependency mappings from active projects.
   /// Returns module_name -> set of dependency module names.
   string_map<string_set> collect_project_deps() const {
+    auto with_deps = active_projects() | v::filter(&GradleProject::has_project_deps);
     string_map<string_set> deps;
-    for (const auto& proj : projects) {
-      if (proj.is_skipped() || proj.project_dependencies.empty()) {
-        continue;
-      }
+    for (const auto& proj : with_deps) {
       deps[proj.module_name()] = proj.project_dependencies | to_set();
     }
     return deps;
@@ -402,13 +377,13 @@ struct GradleBuildOutput {
   /// Convert all active projects into a merged WorkspaceData.
   /// Libraries are deduplicated by name (first occurrence wins).
   WorkspaceData to_workspace(const string& jvm_target, const GenerationOptions& options) const {
-    auto active_projects = projects | v::filter(std::not_fn(&GradleProject::is_skipped)) | to_vector();
+    auto active = active_projects() | to_vector();
 
     auto to_active_sets = [&](const auto& p) { return p.active_sets(options); };
-    auto sets_per_project = active_projects | v::transform(to_active_sets) | to_vector();
+    auto sets_per_project = active | v::transform(to_active_sets) | to_vector();
 
     if (options.remove_missing_paths) {
-      const auto mod_names = active_projects | v::transform(&GradleProject::module_name) | to_set();
+      const auto mod_names = active | v::transform(&GradleProject::module_name) | to_set();
       for (auto& ss : sets_per_project | v::join) {
         ss.remove_missing_paths(mod_names);
       }
@@ -419,10 +394,10 @@ struct GradleBuildOutput {
     };
 
     WorkspaceData ws;
-    for (const auto& [proj, sets] : v::zip(active_projects, sets_per_project)) {
-      ws.modules.push_back(proj.to_module(sets));
-      ws.kotlin_settings.push_back(proj.to_kotlin_settings(jvm_target, sets));
-      ws.libraries.append_range(sets | v::transform(to_libs) | v::join | to_vector());
+    for (const auto& [proj, sets] : v::zip(active, sets_per_project)) {
+      ws.add_module(proj.to_module(sets));
+      ws.add_kotlin_settings(proj.to_kotlin_settings(jvm_target, sets));
+      ws.add_libs(sets | v::transform(to_libs) | v::join);
     }
 
     // Deduplicate libraries by name, keeping first occurrence.

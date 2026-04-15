@@ -64,12 +64,13 @@ TEST_CASE("runs command in specified working directory") {
 
 TEST_CASE("cwd accessor returns the working directory") {
   const ProcessRunner runner({"echo"}, "/tmp");
-  CHECK(runner.cwd() == "/tmp");
+  REQUIRE(runner.cwd().has_value());
+  CHECK(runner.cwd()->string().ends_with("/tmp"));
 }
 
-TEST_CASE("cwd defaults to empty") {
+TEST_CASE("cwd defaults to nullopt") {
   const ProcessRunner runner({"echo"});
-  CHECK(runner.cwd().empty());
+  CHECK(!runner.cwd().has_value());
 }
 
 // --- GradleRunner ---
@@ -79,16 +80,18 @@ TEST_CASE("GradleRunner writes init script to specified temp dir") {
   const klspw::GradleRunner runner(tmp.path);
 
   const auto& path = runner.init_script_path();
-  REQUIRE(fs::exists(path));
-  CHECK(path.string().starts_with(tmp.path.string()));
-  CHECK(path.extension() == ".kts");
+  REQUIRE(path.has_value());
+  REQUIRE(fs::exists(*path));
+  CHECK(path->string().starts_with(tmp.path.string()));
+  CHECK(path->extension() == ".kts");
 }
 
 TEST_CASE("init script contains expected markers") {
   const TempDir tmp;
   const klspw::GradleRunner runner(tmp.path);
 
-  const auto content = klspw::read_file(runner.init_script_path());
+  REQUIRE(runner.init_script_path().has_value());
+  const auto content = klspw::read_file(*runner.init_script_path());
 
   CHECK(content.contains("dumpKotlinLspModel"));
   CHECK(content.contains("KLSPW_BEGIN"));
@@ -101,7 +104,8 @@ TEST_CASE("init script is cleaned up on destruction") {
   fs::path script_path;
   {
     const klspw::GradleRunner runner(tmp.path);
-    script_path = runner.init_script_path();
+    REQUIRE(runner.init_script_path().has_value());
+    script_path = *runner.init_script_path();
     REQUIRE(fs::exists(script_path));
   }
   CHECK_FALSE(fs::exists(script_path));
@@ -111,19 +115,21 @@ TEST_CASE("GradleRunner uses default temp dir when not specified") {
   const klspw::GradleRunner runner;
 
   const auto& path = runner.init_script_path();
-  REQUIRE(fs::exists(path));
-  CHECK(path.string().contains("klspw"));
+  REQUIRE(path.has_value());
+  REQUIRE(fs::exists(*path));
+  CHECK(path->string().contains("klspw"));
 }
 
 TEST_CASE("GradleRunner close is idempotent") {
   const TempDir tmp;
   klspw::GradleRunner runner(tmp.path);
-  const auto script = runner.init_script_path();
+  REQUIRE(runner.init_script_path().has_value());
+  const auto script = *runner.init_script_path();
   REQUIRE(fs::exists(script));
 
   runner.close();
   CHECK_FALSE(fs::exists(script));
-  CHECK(runner.init_script_path().empty());
+  CHECK_FALSE(runner.init_script_path().has_value());
 
   // second close is a no-op, must not throw
   CHECK_NOTHROW(runner.close());
@@ -132,14 +138,15 @@ TEST_CASE("GradleRunner close is idempotent") {
 TEST_CASE("GradleRunner move constructor transfers ownership") {
   const TempDir tmp;
   klspw::GradleRunner original(tmp.path);
-  const auto script = original.init_script_path();
+  REQUIRE(original.init_script_path().has_value());
+  const auto script = *original.init_script_path();
   REQUIRE(fs::exists(script));
 
   const klspw::GradleRunner moved(std::move(original));
 
   CHECK(moved.init_script_path() == script);
   CHECK(fs::exists(script));
-  CHECK(original.init_script_path().empty());  // NOLINT(bugprone-use-after-move)
+  CHECK_FALSE(original.init_script_path().has_value());  // NOLINT(bugprone-use-after-move)
 }
 
 TEST_CASE("GradleRunner move assignment transfers ownership and cleans old") {
@@ -147,8 +154,10 @@ TEST_CASE("GradleRunner move assignment transfers ownership and cleans old") {
   const TempDir tmp_b;
   klspw::GradleRunner a(tmp_a.path);
   klspw::GradleRunner b(tmp_b.path);
-  const auto script_a = a.init_script_path();
-  const auto script_b = b.init_script_path();
+  REQUIRE(a.init_script_path().has_value());
+  REQUIRE(b.init_script_path().has_value());
+  const auto script_a = *a.init_script_path();
+  const auto script_b = *b.init_script_path();
   REQUIRE(script_a != script_b);
 
   b = std::move(a);
@@ -156,7 +165,7 @@ TEST_CASE("GradleRunner move assignment transfers ownership and cleans old") {
   CHECK(b.init_script_path() == script_a);
   CHECK(fs::exists(script_a));
   CHECK_FALSE(fs::exists(script_b));  // old b's script cleaned up
-  CHECK(a.init_script_path().empty());  // NOLINT(bugprone-use-after-move)
+  CHECK_FALSE(a.init_script_path().has_value());  // NOLINT(bugprone-use-after-move)
 }
 
 TEST_CASE("GradleRunner operator() assembles correct args and runs process") {
@@ -170,7 +179,8 @@ TEST_CASE("GradleRunner operator() assembles correct args and runs process") {
   // echo receives: --no-configuration-cache --init-script {path} --quiet dumpKotlinLspModel
   CHECK(output.contains("--no-configuration-cache"));
   CHECK(output.contains("--init-script"));
-  CHECK(output.contains(runner.init_script_path().string()));
+  REQUIRE(runner.init_script_path().has_value());
+  CHECK(output.contains(runner.init_script_path()->string()));
   CHECK(output.contains("--quiet"));
   CHECK(output.contains("dumpKotlinLspModel"));
 }

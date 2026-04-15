@@ -16,15 +16,6 @@ inline string_view trim(string_view sv, string_view chars = " \n\r") {
   return sv.substr(start, sv.find_last_not_of(chars) - start + 1);
 }
 
-/// Join any range of string-like elements with a separator (C++23).
-template <r::input_range R>
-  requires std::convertible_to<r::range_value_t<R>, string_view>
-inline string join(R&& parts, string_view sep = " ") {
-  return std::forward<R>(parts) | v::join_with(sep) | r::to<string>();
-}
-
-inline string join(std::initializer_list<string_view> parts, string_view sep = " ") { return join<>(parts, sep); }
-
 /// Split a string into words on spaces, skipping empty segments.
 inline strings split_words(string_view sv) {
   const auto non_empty = [](auto&& word) { return !r::empty(word); };
@@ -45,6 +36,33 @@ inline std::pair<string_view, string_view> strip_prefixes(string_view path, stri
   return {path, {}};
 }
 
+/// Escape a string for use as a JSON string value. Escapes \ and " characters.
+string escape_json(string_view sv);
+
+/// Parsed Maven coordinates: "group:module:version".
+struct MavenCoords {
+  string group;
+  string module;
+  string version;
+
+  /// Parse "group:module:version" into components. Returns nullopt if not a valid coordinate.
+  static optional<MavenCoords> parse(string_view coords) {
+    const auto sep1 = coords.find(':');
+    if (sep1 == string_view::npos) {
+      return nullopt;
+    }
+    const auto sep2 = coords.find(':', sep1 + 1);
+    if (sep2 == string_view::npos) {
+      return nullopt;
+    }
+    return MavenCoords{
+        .group = string{coords.substr(0, sep1)},
+        .module = string{coords.substr(sep1 + 1, sep2 - sep1 - 1)},
+        .version = string{coords.substr(sep2 + 1)},
+    };
+  }
+};
+
 /// A pair of open/close delimiters for extract_between.
 struct Delimiters {
   string_view open;
@@ -59,5 +77,23 @@ struct Delimiters {
 /// Extract the substring between two delimiters, trimmed.
 /// Returns nullopt if either delimiter is missing.
 opt_string extract_between(string_view input, Delimiters delimiters);
+
+/// Pipe adaptor: range | join_to_string(", ") materializes into a joined string.
+/// Works with any range whose elements are convertible to string_view.
+namespace detail {
+
+struct join_to_string_adaptor : r::range_adaptor_closure<join_to_string_adaptor> {
+  string_view sep;
+
+  template <r::input_range R>
+    requires std::convertible_to<r::range_value_t<R>, string_view>
+  string operator()(R&& range) const {
+    return std::forward<R>(range) | v::join_with(sep) | r::to<string>();
+  }
+};
+
+}  // namespace detail
+
+inline auto join_to_string(string_view sep = " ") { return detail::join_to_string_adaptor{.sep = sep}; }
 
 }  // namespace klspw

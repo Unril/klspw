@@ -1,0 +1,87 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.2.0)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-tap
+  cancel-in-progress: false
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Get release info
+        id: release
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          URL="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG.tar.gz"
+          SHA256=$(curl -fsSL "$URL" | shasum -a 256 | cut -d' ' -f1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "::notice::version=$VERSION sha256=$SHA256"
+
+      - name: Checkout tap
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: Unril/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - name: Update formula
+        env:
+          URL: ${{ steps.release.outputs.url }}
+          SHA256: ${{ steps.release.outputs.sha256 }}
+        run: |
+          ruby -i -e '
+            formula = ARGF.read
+            formula.sub!(/url ".*"/, %Q{url "#{ENV["URL"]}"})
+            formula.sub!(/sha256 "[0-9a-f]{64}"/, %Q{sha256 "#{ENV["SHA256"]}"})
+            formula.sub!(/\n  bottle do.*?  end\n/m, "\n")
+            print formula
+          ' Formula/klspw.rb
+
+      - name: Verify formula
+        env:
+          SHA256: ${{ steps.release.outputs.sha256 }}
+        run: |
+          ruby -c Formula/klspw.rb
+          grep -q "$SHA256" Formula/klspw.rb
+          ! grep -q 'bottle do' Formula/klspw.rb
+
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+          SHA256: ${{ steps.release.outputs.sha256 }}
+        run: |
+          BRANCH="klspw-$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git push origin --delete "$BRANCH" 2>/dev/null || true
+          git checkout -B "$BRANCH"
+          git add Formula/klspw.rb
+          git commit -m "klspw $VERSION"
+          git push origin "$BRANCH"
+          gh pr create \
+            --repo Unril/homebrew-tap \
+            --title "klspw $VERSION" \
+            --body "Automated update from [$TAG](https://github.com/Unril/klspw/releases/tag/$TAG).
+
+          sha256: \`$SHA256\`" \
+            --base main \
+            --head "$BRANCH"

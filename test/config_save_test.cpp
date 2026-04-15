@@ -70,7 +70,7 @@ TEST_CASE("to_yaml with per-root build overrides round-trips") {
 TEST_CASE("StarterConfig single root with default build") {
   const TempDir root_dir;
   const auto data =
-      klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(root_dir.path.parent_path()).to_data();
+      klspw::StarterConfig{{root_dir.path.string()}}.with_config_path(root_dir.path.parent_path()).to_data();
 
   CHECK(data.version == 1);
   CHECK(data.workspace_file == "./workspace.json");
@@ -84,7 +84,7 @@ TEST_CASE("StarterConfig single root with default build") {
 TEST_CASE("StarterConfig root path is relative to config_dir") {
   const TempDir root_dir;
   const auto parent = fs::weakly_canonical(root_dir.path.parent_path());
-  const auto data = klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(parent).to_data();
+  const auto data = klspw::StarterConfig{{root_dir.path.string()}}.with_config_path(parent).to_data();
 
   const auto expected = "./" + root_dir.path.filename().string();
   CHECK(data.roots[0].path == expected);
@@ -93,8 +93,8 @@ TEST_CASE("StarterConfig root path is relative to config_dir") {
 TEST_CASE("StarterConfig respects custom jvm_target") {
   const TempDir root_dir;
   const auto data = klspw::StarterConfig{{root_dir.path.string()}}
-                        .set_config_path(root_dir.path.parent_path())
-                        .set_jvm_target("17")
+                        .with_config_path(root_dir.path.parent_path())
+                        .with_jvm_target("17")
                         .to_data();
   CHECK(data.jvm_target == "17");
 }
@@ -102,7 +102,7 @@ TEST_CASE("StarterConfig respects custom jvm_target") {
 TEST_CASE("StarterConfig output passes ConfigData::validate") {
   const TempDir root_dir;
   const auto data =
-      klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(root_dir.path.parent_path()).to_data();
+      klspw::StarterConfig{{root_dir.path.string()}}.with_config_path(root_dir.path.parent_path()).to_data();
   CHECK_NOTHROW(klspw::ValidateContext::require_valid(data));
 }
 
@@ -130,7 +130,7 @@ TEST_CASE("StarterConfig save_yaml_file throws without config_path") {
 
 TEST_CASE("StarterConfig save_yaml_file to directory appends default filename") {
   const TempDir root_dir;
-  klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(root_dir.path).save_yaml_file();
+  klspw::StarterConfig{{root_dir.path.string()}}.with_config_path(root_dir.path).save_yaml_file();
 
   CHECK(fs::is_regular_file(root_dir.path / klspw::default_config_filename));
 }
@@ -138,7 +138,7 @@ TEST_CASE("StarterConfig save_yaml_file to directory appends default filename") 
 TEST_CASE("StarterConfig parses per-root build command from arg string") {
   const TempDir root_dir;
   const auto arg = root_dir.path.string() + " my_build --silent";
-  const auto data = klspw::StarterConfig{{arg}}.set_config_path(root_dir.path.parent_path()).to_data();
+  const auto data = klspw::StarterConfig{{arg}}.with_config_path(root_dir.path.parent_path()).to_data();
 
   REQUIRE(data.roots.size() == 1);
   REQUIRE(data.roots[0].build.has_value());
@@ -150,7 +150,7 @@ TEST_CASE("StarterConfig multiple roots") {
   const TempDir dir_a;
   const TempDir dir_b;
   const auto data = klspw::StarterConfig{{dir_a.path.string(), dir_b.path.string()}}
-                        .set_config_path(dir_a.path.parent_path())
+                        .with_config_path(dir_a.path.parent_path())
                         .to_data();
 
   REQUIRE(data.roots.size() == 2);
@@ -162,8 +162,8 @@ TEST_CASE("StarterConfig multiple roots") {
 TEST_CASE("StarterConfig global build via set_build") {
   const TempDir root_dir;
   const auto data = klspw::StarterConfig{{root_dir.path.string()}}
-                        .set_config_path(root_dir.path.parent_path())
-                        .set_build("my-build")
+                        .with_config_path(root_dir.path.parent_path())
+                        .with_build("my-build")
                         .to_data();
 
   CHECK(data.build->command == klspw::strings{"my-build"});
@@ -173,8 +173,8 @@ TEST_CASE("StarterConfig global build via set_build") {
 TEST_CASE("StarterConfig global build with flags via set_build") {
   const TempDir root_dir;
   const auto data = klspw::StarterConfig{{root_dir.path.string()}}
-                        .set_config_path(root_dir.path.parent_path())
-                        .set_build("my-build --quiet")
+                        .with_config_path(root_dir.path.parent_path())
+                        .with_build("my-build --quiet")
                         .to_data();
 
   CHECK(data.build->command == klspw::strings{"my-build", "--quiet"});
@@ -185,7 +185,7 @@ TEST_CASE("StarterConfig mixed: some roots with build, global for the rest") {
   const TempDir dir_b;
   const auto arg_a = dir_a.path.string() + " custom_build";
   const auto data =
-      klspw::StarterConfig{{arg_a, dir_b.path.string()}}.set_config_path(dir_a.path.parent_path()).to_data();
+      klspw::StarterConfig{{arg_a, dir_b.path.string()}}.with_config_path(dir_a.path.parent_path()).to_data();
 
   REQUIRE(data.roots.size() == 2);
   REQUIRE(data.roots[0].build.has_value());
@@ -199,7 +199,7 @@ TEST_CASE("StarterConfig mixed: some roots with build, global for the rest") {
 TEST_CASE("StarterConfig to_yaml round-trips through Config::load_yaml_file") {
   const TempDir root_dir;
   const auto config_path = root_dir.path / "config.yaml";
-  klspw::StarterConfig{{root_dir.path.string()}}.set_config_path(config_path).save_yaml_file();
+  klspw::StarterConfig{{root_dir.path.string()}}.with_config_path(config_path).save_yaml_file();
 
   const auto cfg = klspw::Config::load_yaml_file(config_path);
   const auto& data = cfg.data();
@@ -212,7 +212,7 @@ TEST_CASE("StarterConfig to_yaml round-trips through Config::load_yaml_file") {
 
 TEST_CASE("StarterConfig::discover finds Gradle roots in fixture directory") {
   const auto fixtures = fs::weakly_canonical("test/fixtures/projects");
-  const auto data = klspw::StarterConfig::discover({fixtures.string()}).set_config_path(fixtures).to_data();
+  const auto data = klspw::StarterConfig::discover({fixtures.string()}).with_config_path(fixtures).to_data();
 
   // simple, multi, with-deps each have settings.gradle.kts at top level.
   // multi-root has two sub-roots under src/ (core, service).
@@ -228,7 +228,7 @@ TEST_CASE("StarterConfig::discover finds Gradle roots in fixture directory") {
 
 TEST_CASE("StarterConfig::discover finds multi-root sub-projects") {
   const auto multi_root = fs::weakly_canonical("test/fixtures/projects/multi-root");
-  const auto data = klspw::StarterConfig::discover({multi_root.string()}).set_config_path(multi_root).to_data();
+  const auto data = klspw::StarterConfig::discover({multi_root.string()}).with_config_path(multi_root).to_data();
 
   REQUIRE(data.roots.size() == 2);
 
@@ -242,8 +242,8 @@ TEST_CASE("StarterConfig::discover finds multi-root sub-projects") {
 TEST_CASE("StarterConfig::discover with set_build overrides default") {
   const auto multi_root = fs::weakly_canonical("test/fixtures/projects/multi-root");
   const auto data = klspw::StarterConfig::discover({multi_root.string()})
-                        .set_config_path(multi_root)
-                        .set_build("gradle --quiet")
+                        .with_config_path(multi_root)
+                        .with_build("gradle --quiet")
                         .to_data();
 
   CHECK(data.build->command == klspw::strings{"gradle", "--quiet"});
@@ -256,8 +256,8 @@ TEST_CASE("StarterConfig::discover round-trips through save and load") {
   const auto config_path = out_dir.path / "klspw.yaml";
 
   klspw::StarterConfig::discover({multi_root.string()})
-      .set_build("gradle --quiet")
-      .set_config_path(config_path)
+      .with_build("gradle --quiet")
+      .with_config_path(config_path)
       .save_yaml_file();
 
   const auto cfg = klspw::Config::load_yaml_file(config_path);
@@ -284,7 +284,7 @@ TEST_CASE("StarterConfig::discover with multiple search directories") {
   const auto simple = fs::weakly_canonical("test/fixtures/projects");
   const auto multi_root = fs::weakly_canonical("test/fixtures/projects/multi-root");
   const auto data =
-      klspw::StarterConfig::discover({simple.string(), multi_root.string()}).set_config_path(simple).to_data();
+      klspw::StarterConfig::discover({simple.string(), multi_root.string()}).with_config_path(simple).to_data();
 
   // projects/ has simple, multi, with-deps (3 top-level roots) + multi-root's 2 sub-roots = 7
   // total. But multi-root sub-roots are found both via projects/ and multi-root/ — dedupe not

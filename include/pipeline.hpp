@@ -5,8 +5,6 @@
 /// Pipeline owns a Config (by value) and a build function (injected),
 /// orchestrating workspace building, writing, and inspection.
 
-#include <fstream>
-
 #include <spdlog/spdlog.h>
 
 #include "config.hpp"
@@ -14,7 +12,6 @@
 #include "gradle.hpp"
 #include "gradle_runner.hpp"
 #include "native_stubs_content.hpp"
-#include "strings.hpp"
 #include "workspace.hpp"
 
 namespace klspw {
@@ -45,7 +42,9 @@ class Pipeline {
       d_info("  promoted {} library deps to module deps ({} libraries remaining)", promoted, ws.libraries.size());
     }
     if (has_kmp) {
-      inject_native_stubs(ws);
+      const auto ws_path = cfg_.workspace_file();
+      require(ws_path.has_value(), "workspace_file required for native stubs injection");
+      inject_native_stubs(ws, *ws_path);
     }
     ws.describe();
     return ws;
@@ -54,10 +53,10 @@ class Pipeline {
   /// Build workspace and write it as workspace.json.
   void write_workspace() const {
     const auto ws_path = cfg_.workspace_file();
-    require(!ws_path.empty(), "workspace_file not configured in config");
+    require(ws_path.has_value(), "workspace_file not configured in config");
 
-    build_workspace().save_json_file(ws_path);
-    d_info("Wrote {}", ws_path);
+    build_workspace().save_json_file(*ws_path);
+    d_info("Wrote {}", ws_path->string());
   }
 
   /// Build workspace and log a full summary (for inspect subcommand).
@@ -74,76 +73,54 @@ class Pipeline {
     const auto build = cfg_.data().build_for(root);
     const auto root_path = cfg_.root_path(root);
     d_info("Processing root: {}", root_path.string());
-    d_info("  build command: {}", join(build.command));
-    d_info("  gradle args: {}", build.has_args() ? join(build.gradle_args) : "(none)");
+    d_info("  build command: {}", build.command | join_to_string());
+    d_info("  gradle args: {}", build.has_args() ? (build.gradle_args | join_to_string()) : "(none)"s);
 
     const auto raw_output = run_gradle_(build, root_path);
     d_info("  Gradle output: {} bytes", raw_output.size());
 
-    if (!gradle_output_path_.empty()) {
+    if (gradle_output_path_) {
       save_gradle_output(raw_output);
     }
 
     const auto build_output = GradleBuildOutput::from_raw_output(raw_output);
     build_output.describe();
 
-    const auto has_kmp_project = r::any_of(build_output.projects, [](const auto& p) {
-      return !p.is_skipped() && (p.kind == "kmp" || p.kind == "kmp-android");
-    });
-
     return {
         .workspace = build_output.to_workspace(cfg_.data().jvm_target, cfg_.data().options),
         .project_deps = build_output.collect_project_deps(),
-        .has_kmp = has_kmp_project,
+        .has_kmp = build_output.has_kmp_project(),
     };
   }
 
-  static constexpr auto native_stubs_lib_name = "kotlin-native-stubs"sv;
-
   /// Write the embedded kotlin-native-stubs.jar next to workspace.json and add it as a library.
-  /// KMP projects use kotlin.native annotations (HiddenFromObjC, etc.) that only exist in
-  /// Kotlin/Native metadata (.knm/.klib), not in JVM bytecode. kotlin-lsp can't resolve them
-  /// without JVM .class stubs.
-  void inject_native_stubs(WorkspaceData& ws) const {
-    const auto ws_dir = cfg_.workspace_file().parent_path();
-    const auto stubs_dir = ws_dir / ".klspw";
-    fs::create_directories(stubs_dir);
-    const auto stubs_path = stubs_dir / "kotlin-native-stubs.jar";
+  static void inject_native_stubs(WorkspaceData& ws, const path& ws_path) {
+    const auto lib_name = "kotlin-native-stubs"s;
+    const auto stubs_dir = ws_path.parent_path() / ".klspw";
+    const auto stubs_path = stubs_dir / (lib_name + ".jar");
 
-    // Write the embedded jar to disk.
-    std::ofstream out(stubs_path, std::ios::binary);
-    require(out.good(), "Failed to open {} for writing", stubs_path);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) -- writing embedded binary data
-    out.write(reinterpret_cast<const char*>(native_stubs_jar.data()),
-              static_cast<std::streamsize>(native_stubs_jar.size()));
-    out.close();
-    require(out.good(), "Failed to write {}", stubs_path);
+    write_binary_file(stubs_path, native_stubs_jar);
 
-    // Add as a library and make all modules depend on it.
-    const auto stubs_path_str = stubs_path.string();
-    ws.libraries.push_back({
-        .name = string(native_stubs_lib_name),
+    ws.add_lib({
+        .name = lib_name,
         .type = string(library_type_imported),
-        .roots = {{.path = stubs_path_str}},
+        .roots = {{.path = stubs_path.string()}},
     });
     for (auto& mod : ws.modules) {
-      mod.dependencies.emplace_back(LibraryDep{.name = string(native_stubs_lib_name)});
+      mod.add_dep(LibraryDep{.name = lib_name});
     }
     d_info("  injected kotlin-native-stubs.jar for KMP annotation resolution");
   }
 
   /// Save Gradle output to the configured path.
   void save_gradle_output(string_view raw_output) const {
-    if (const auto parent = gradle_output_path_.parent_path(); !parent.empty()) {
-      fs::create_directories(parent);
-    }
-    write_file(gradle_output_path_, raw_output);
-    d_info("  Saved gradle output to {}", gradle_output_path_.string());
+    write_file(*gradle_output_path_, raw_output);
+    d_info("  Saved gradle output to {}", gradle_output_path_->string());
   }
 
   Config cfg_;
   GradleBuildFn run_gradle_;
-  path gradle_output_path_;
+  opt_path gradle_output_path_;
 };
 
 }  // namespace klspw

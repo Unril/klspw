@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "pipeline.hpp"
+#include "ranges.hpp"
 #include "version.hpp"
 
 namespace {
@@ -28,9 +29,9 @@ std::set<std::string> log_level_names() {
 }
 
 void set_log_level(std::string_view level) {
-  const auto* it = std::ranges::find(log_levels, level, &LogLevel::name);
-  klspw::require(it != log_levels.end(), "Invalid log level: {}", level);
-  spdlog::set_level(it->level);
+  auto found = klspw::find_opt(log_levels, [&](const auto& l) { return l.name == level; });
+  klspw::require(found.has_value(), "Invalid log level: {}", level);
+  spdlog::set_level(found->level);
 }
 
 }  // namespace
@@ -80,16 +81,11 @@ int main(int argc, char* argv[]) try {
   set_log_level(log_level);
 
   if (init->parsed()) {
-    auto starter = init_discover ? klspw::StarterConfig::discover(init_roots).set_jvm_target(init_jvm_target)
-                                 : klspw::StarterConfig{init_roots}.set_jvm_target(init_jvm_target);
+    auto starter = init_discover ? klspw::StarterConfig::discover(init_roots) : klspw::StarterConfig{init_roots};
 
-    starter.set_config_path(config_path);
+    starter.with_jvm_target(init_jvm_target).with_config_path(config_path).with_build(init_build);
 
-    if (!init_build.empty()) {
-      starter.set_build(init_build);
-    }
-
-    if (!starter.config_path().empty()) {
+    if (starter.config_path()) {
       starter.save_yaml_file();
     } else {
       std::cout << starter.to_yaml();

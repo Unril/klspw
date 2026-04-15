@@ -53,6 +53,32 @@ using fs::path;
 using opt_path = optional<path>;
 using paths = vector<path>;
 
+/// Projection: string-like -> path. Usable in range pipelines: strs | v::transform(to_path).
+inline constexpr auto to_path = [](auto&& s) { return path{std::forward<decltype(s)>(s)}; };
+
+/// Projection: path -> string. Usable in range pipelines: paths | v::transform(to_string).
+inline constexpr auto to_string = [](const path& p) { return p.string(); };
+
+// --- Optional predicates and projections ---
+
+/// Predicate: true if the optional-like value has a value. Usable in v::filter(has_value).
+inline constexpr auto has_value = [](const auto& opt) { return opt.has_value(); };
+
+/// Projection: unwrap an optional-like value. Usable in v::transform(deref) after filtering.
+/// Forwards correctly: returns const T& for lvalue optionals, T&& for rvalue optionals.
+inline constexpr auto deref = [](auto&& opt) -> decltype(auto) { return *std::forward<decltype(opt)>(opt); };
+
+// --- Function composition ---
+
+/// Compose two callables left-to-right: compose(f, g)(x) == g(f(x)).
+/// Usable with v::transform: v::transform(compose(to_path, to_roots))
+template <typename F1, typename F2>
+constexpr auto compose(F1 first, F2 second) {
+  return [first = std::move(first), second = std::move(second)](auto&& arg) -> decltype(auto) {
+    return second(first(std::forward<decltype(arg)>(arg)));
+  };
+}
+
 /// Ordered map with O(1) lookup and deterministic iteration order.
 /// Used for all string-keyed maps in model types (serialized to JSON objects).
 template <typename V>

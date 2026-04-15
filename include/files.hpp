@@ -11,8 +11,11 @@ namespace klspw {
 /// Read entire file into a string. Throws on empty path, missing file, or read failure.
 string read_file(const path& path);
 
-/// Write content to a file, creating or truncating it. Throws on empty path or write failure.
+/// Write content to a file, creating parent directories as needed. Throws on empty path or write failure.
 void write_file(const path& path, string_view content);
+
+/// Write binary data to a file, creating parent directories as needed. Throws on empty path or write failure.
+void write_binary_file(const path& path, std::span<const std::uint8_t> data);
 
 // --- Filesystem search ---
 

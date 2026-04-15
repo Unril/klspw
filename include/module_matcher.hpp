@@ -6,21 +6,15 @@
 
 #include "common.hpp"
 #include "files.hpp"
+#include "ranges.hpp"
+#include "strings.hpp"
 
 namespace klspw {
 
 /// Extract the module component from a Maven coordinate string ("group:module:version" -> "module").
-/// Returns empty string_view if the input is not a valid Maven coordinate.
-inline string_view maven_module_component(string_view coords) {
-  const auto colon1 = coords.find(':');
-  if (colon1 == string_view::npos) {
-    return {};
-  }
-  const auto colon2 = coords.find(':', colon1 + 1);
-  if (colon2 == string_view::npos) {
-    return {};
-  }
-  return coords.substr(colon1 + 1, colon2 - colon1 - 1);
+/// Returns nullopt if the input is not a valid Maven coordinate.
+inline opt_string maven_module_component(string_view coords) {
+  return MavenCoords::parse(coords).transform([](const MavenCoords& m) { return m.module; });
 }
 
 /// Resolves library names to workspace module names using longest-match-first.
@@ -29,16 +23,16 @@ class ModuleMatcher {
   vector<string> sorted_names_;  ///< Module names sorted by descending length.
 
  public:
-  /// Construct from a set of module names. Empty set produces a matcher that never matches.
-  explicit ModuleMatcher(const string_set& module_names) : sorted_names_(module_names | r::to<vector<string>>()) {
-    // Longest first so "CoreLib" matches before "Core".
+  /// Longest first so "CoreLib" matches before "Core".
+  explicit ModuleMatcher(vector<string> names) : sorted_names_{std::move(names)} {
     r::sort(sorted_names_, std::greater{}, &string::size);
   }
 
+  /// Construct from a set of module names. Empty set produces a matcher that never matches.
+  explicit ModuleMatcher(const string_set& module_names) : ModuleMatcher(module_names | r::to<vector<string>>()) {}
+
   /// Construct from an initializer list of string-like values (convenience for tests).
-  ModuleMatcher(std::initializer_list<string_view> names) : sorted_names_(names | r::to<vector<string>>()) {
-    r::sort(sorted_names_, std::greater{}, &string::size);
-  }
+  ModuleMatcher(std::initializer_list<string_view> names) : ModuleMatcher(names | r::to<vector<string>>()) {}
 
   /// Check if a library name corresponds to a specific module name.
   /// Matches exact ("lib" == "lib"), prefix-with-dash ("core-jvm" starts with "core" + "-"),
@@ -48,8 +42,8 @@ class ModuleMatcher {
     if (lib_name == module_name) {
       return true;
     }
-    if (lib_name.size() > module_name.size() && lib_name.starts_with(module_name) &&
-        lib_name[module_name.size()] == '-') {
+    const auto prefix = string{module_name} + "-";
+    if (lib_name.starts_with(prefix)) {
       return true;
     }
     // AGP jetification: "jetified-{module}-..." -> strip prefix and re-check.
@@ -58,8 +52,8 @@ class ModuleMatcher {
       return matches_name(lib_name.substr(jetified.size()), module_name);
     }
     // Maven coordinates: "group:module:version" -> extract module component and re-check.
-    if (const auto maven_mod = maven_module_component(lib_name); !maven_mod.empty()) {
-      return matches_name(maven_mod, module_name);
+    if (const auto maven_mod = maven_module_component(lib_name)) {
+      return matches_name(*maven_mod, module_name);
     }
     return false;
   }
@@ -67,18 +61,14 @@ class ModuleMatcher {
   /// Find the module name that matches a library name, or nullopt.
   /// Uses longest-match-first to prefer "CoreLib" over "Core".
   opt_string find_module(string_view lib_name) const {
-    const auto it = r::find_if(sorted_names_, [&](const auto& name) { return matches_name(lib_name, name); });
-    return it != sorted_names_.end() ? opt_string{*it} : nullopt;
+    return find_opt(sorted_names_, [&](const auto& name) { return matches_name(lib_name, name); });
   }
 
   /// Find the module to promote a library dep to, excluding self-references.
   /// Returns the target module name if the library should be promoted, nullopt otherwise.
   opt_string promote_target(string_view lib_name, string_view owning_module) const {  // NOLINT(*-swappable-parameters)
-    auto target = find_module(lib_name);
-    if (target && *target == owning_module) {
-      return nullopt;
-    }
-    return target;
+    return find_module(lib_name).and_then(
+        [&](const string& target) -> opt_string { return target == owning_module ? nullopt : opt_string{target}; });
   }
 
   /// Check if a classpath entry's file stem matches any known module name.

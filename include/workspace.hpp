@@ -169,8 +169,7 @@ struct ModuleData {
 
   template <typename DepType>
   size_t dep_count() const {
-    return static_cast<size_t>(
-        r::count_if(dependencies, [](const auto& d) { return std::holds_alternative<DepType>(d); }));
+    return static_cast<size_t>(r::distance(deps_of_type<DepType>()));
   }
 
   template <typename DepType>
@@ -180,6 +179,8 @@ struct ModuleData {
       return dep != nullptr && names.contains(dep->name);
     });
   }
+
+  void add_dep(auto&& dep) { dependencies.emplace_back(std::forward<decltype(dep)>(dep)); }
 
   void add_deps(auto&& new_deps) { dependencies.append_range(std::forward<decltype(new_deps)>(new_deps)); }
 };
@@ -313,6 +314,14 @@ struct WorkspaceData {
     d_describe(kotlin_settings);
   }
 
+  void add_module(ModuleData mod) { modules.push_back(std::move(mod)); }
+
+  void add_lib(LibraryData lib) { libraries.push_back(std::move(lib)); }
+
+  void add_libs(auto&& libs) { libraries.append_range(std::forward<decltype(libs)>(libs)); }
+
+  void add_kotlin_settings(KotlinSettingsData settings) { kotlin_settings.push_back(std::move(settings)); }
+
   /// Merge another WorkspaceData into this one.
   /// Modules, kotlin_settings, java_settings, and sdks are appended.
   /// Libraries are deduplicated by name (first occurrence wins).
@@ -357,7 +366,7 @@ struct WorkspaceData {
       if (has_project_deps && lib.name.contains(':')) {
         // Extract Maven module component and check for exact match.
         const auto maven_mod = maven_module_component(lib.name);
-        const bool exact_maven_match = !maven_mod.empty() && maven_mod == *target;
+        const bool exact_maven_match = maven_mod.has_value() && *maven_mod == *target;
         if (!exact_maven_match) {
           const auto it = project_deps.find(string{mod_name});
           if (it == project_deps.end() || !it->second.contains(*target)) {
@@ -413,9 +422,7 @@ struct WorkspaceData {
   string_set library_names() const { return libraries | v::transform(&LibraryData::name) | to_set(); }
 
   void remove_libraries(const string_set& names) {
-    if (!names.empty()) {
-      std::erase_if(libraries, [&](const auto& lib) { return names.contains(lib.name); });
-    }
+    std::erase_if(libraries, [&](const auto& lib) { return names.contains(lib.name); });
   }
 
   /// Remove libraries by name, but only those not still referenced by any module's library deps.

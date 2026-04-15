@@ -175,13 +175,14 @@ TEST_CASE("integration: write_workspace produces valid deserializable JSON") {
   const auto config_path = fs::weakly_canonical(fixtures() / "with-deps" / "klspw.yaml");
   auto cfg = klspw::Config::load_yaml_file(config_path);
   const auto ws_path = cfg.workspace_file();
+  REQUIRE(ws_path.has_value());
 
   klspw::GradleRunner runner;
   const klspw::Pipeline pipeline(std::move(cfg), std::ref(runner));
   pipeline.write_workspace();
 
-  const TempFile cleanup{ws_path};
-  const auto ws = klspw::WorkspaceData::load_json_file(ws_path);
+  const TempFile cleanup{*ws_path};
+  const auto ws = klspw::WorkspaceData::load_json_file(*ws_path);
 
   CHECK(ws.modules.size() == 1);
   CHECK(ws.modules[0].name == "with-deps");
@@ -201,8 +202,8 @@ TEST_CASE("integration: discover multi-root and build workspace") {
 
   // Discover roots, set the same build command as the hand-written fixture config.
   klspw::StarterConfig::discover({multi_root.string()})
-      .set_build("gradle --quiet")
-      .set_config_path(config_path)
+      .with_build("gradle --quiet")
+      .with_config_path(config_path)
       .save_yaml_file();
 
   auto cfg = klspw::Config::load_yaml_file(config_path);

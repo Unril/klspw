@@ -66,7 +66,7 @@ class ValidateContext {
     if (errors_.empty()) {
       return;
     }
-    throw runtime_error(join(errors_, "; "));
+    throw runtime_error(errors_ | join_to_string("; "));
   }
 
   /// Validate an item and throw if errors found. Convenience for callers.

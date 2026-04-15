@@ -20,16 +20,31 @@ string read_file(const path& path) {
 
 void write_file(const path& path, string_view content) {
   require(!path.empty(), "write_file: empty path");
+  if (const auto parent = path.parent_path(); !parent.empty()) {
+    fs::create_directories(parent);
+  }
   std::ofstream file(path, std::ios::out | std::ios::binary | std::ios::trunc);
   require(file.good(), "Failed to open file for writing: {}", path);
   file.write(content.data(), static_cast<std::streamsize>(content.size()));
   require(file.good(), "Failed to write file: {}", path);
 }
 
+void write_binary_file(const path& path, std::span<const std::uint8_t> data) {
+  require(!path.empty(), "write_binary_file: empty path");
+  if (const auto parent = path.parent_path(); !parent.empty()) {
+    fs::create_directories(parent);
+  }
+  std::ofstream file(path, std::ios::out | std::ios::binary | std::ios::trunc);
+  require(file.good(), "Failed to open file for writing: {}", path);
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) -- writing binary data
+  file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+  require(file.good(), "Failed to write file: {}", path);
+}
+
 opt_path find_entry(const path& root, string_view suffix, EntryCheck check) {
   std::error_code ec;
   for (const auto& entry : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
-    if ((entry.*check)(ec) && entry.path().native().ends_with(suffix)) {
+    if ((entry.*check)(ec) && entry.path().string().ends_with(suffix)) {
       return entry.path();
     }
   }
