@@ -76,3 +76,4 @@ Config (YAML) -> Pipeline -> GradleRunner (subprocess) -> raw stdout
 - Use `optional` for absence instead of empty strings/paths as logic switches
 - `write_file` / `write_binary_file` auto-create parent directories
 - `GradleBuildFn = std::function<string(const BuildConfig&, const path&)>` for dependency injection in tests
+- `master` branch is protected: changes go through PRs, CI must pass, no force push; tag releases after merge
