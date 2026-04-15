@@ -3,6 +3,7 @@
 [![CI](https://github.com/Unril/klspw/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Unril/klspw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/Unril/klspw/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Unril/klspw/badge)](https://scorecard.dev/viewer/?uri=github.com/Unril/klspw)
+[![codecov](https://codecov.io/github/Unril/klspw/branch/master/graph/badge.svg?token=5O112O201T)](https://codecov.io/github/Unril/klspw)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/Unril/klspw?sort=semver)](https://github.com/Unril/klspw/releases)
 
