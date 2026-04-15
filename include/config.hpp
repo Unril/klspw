@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+//
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 /// Config model for workspace-kotlin-lsp-config.yaml (version 1).

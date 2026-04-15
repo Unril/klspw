@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+//
+// SPDX-License-Identifier: MIT
+
 // Fuzz target for klspw YAML config parsing.
 // Exercises ConfigData::from_yaml() with arbitrary input to find crashes,
 // assertion failures, or undefined behavior in the config parser.

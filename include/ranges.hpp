@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+//
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 /// Range adaptors: to_vector, unique_by, not_in.

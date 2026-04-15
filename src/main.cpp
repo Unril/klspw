@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+//
+// SPDX-License-Identifier: MIT
+
 #include <array>
 #include <iostream>
 #include <ranges>

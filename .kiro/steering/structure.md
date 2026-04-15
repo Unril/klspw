@@ -29,7 +29,7 @@ klspw/
   fuzz/              # libFuzzer fuzz targets (one per entry point)
   scripts/           # Utility scripts (resolve-action-shas.sh)
   resources/
-    init.gradle.kts  # Gradle init script (embedded at build time via configure_file)
+    init.gradle.kts  # Gradle init script (embedded at configure time via configure_file)
     *.hpp.in         # CMake configure_file templates (init script, native stubs, version)
     stubs/           # Precompiled JVM stubs for KMP-only annotations (kotlin.native.*)
   .clusterfuzzlite/  # ClusterFuzzLite CI build integration (Dockerfile, build.sh)
@@ -76,4 +76,4 @@ Config (YAML) -> Pipeline -> GradleRunner (subprocess) -> raw stdout
 - Use `optional` for absence instead of empty strings/paths as logic switches
 - `write_file` / `write_binary_file` auto-create parent directories
 - `GradleBuildFn = std::function<string(const BuildConfig&, const path&)>` for dependency injection in tests
-- `master` branch is protected: changes go through PRs, CI must pass, no force push; tag releases after merge
+- `master` branch is protected: changes go through PRs, CI must pass, no force push; tag releases after merge; feature branches are automatically deleted after PR merge

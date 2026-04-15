@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+//
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 /// File I/O and filesystem search utilities.

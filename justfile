@@ -39,6 +39,12 @@ format:
     uvx black scripts/*.py
     find resources test/fixtures -name '*.kt' -o -name '*.kts' | xargs ktfmt --google-style
 
+# Add or update SPDX license headers on source files (requires: uv)
+license-headers:
+    uvx reuse annotate --license MIT --copyright "Nikolai Fedorov" --merge-copyrights \
+        --skip-unrecognised --recursive include/ src/ fuzz/ scripts/ resources/init.gradle.kts CMakeLists.txt
+
+
 # Fuzz targets (requires Clang, uses libFuzzer + ASan)
 fuzz-build:
     cmake --preset fuzz

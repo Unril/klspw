@@ -44,7 +44,7 @@ brew install cmake ninja just
 export VCPKG_ROOT="$HOME/vcpkg"
 
 # Build and test (dev preset)
-just check          # configure + build + test (all-in-one)
+just check          # build + test (configure must be run first)
 just configure      # cmake --preset dev
 just build          # cmake --build --preset dev
 just test           # ctest --preset dev

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Nikolai Fedorov
+#
+# SPDX-License-Identifier: MIT
+
 cmake_minimum_required(VERSION 3.25)
 
 project(klspw VERSION 0.1.2 LANGUAGES CXX)
