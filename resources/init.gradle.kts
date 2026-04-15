@@ -32,6 +32,10 @@ fun Project.generatedSourceDirs(sourceSetName: String): List<String> {
   val kspDir = file("${bd}/generated/ksp/$sourceSetName")
   if (kspDir.isDirectory) dirs.add(kspDir)
 
+  // databinding: build/generated/data_binding_base_class_source_out/{sourceSetName}/out
+  val dataBindingDir = file("${bd}/generated/data_binding_base_class_source_out/$sourceSetName/out")
+  if (dataBindingDir.isDirectory) dirs.add(dataBindingDir)
+
   return dirs.toSortedPaths()
 }
 
@@ -350,6 +354,11 @@ fun Project.resolveClasspathCoordinates(configName: String): Map<String, String>
           if (owner is org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
             result[artifact.file.safeCanonicalPath()] =
               "${owner.group}:${owner.module}:${owner.version}"
+          } else if (owner is org.gradle.api.artifacts.component.ProjectComponentIdentifier) {
+            // Composite build (includeBuild with dependencySubstitution): the artifact
+            // comes from an included build's project. Use the project name as the coordinate
+            // so klspw can match it to a workspace module during promote_module_deps.
+            result[artifact.file.safeCanonicalPath()] = owner.projectName
           }
         }
       }
@@ -366,6 +375,8 @@ fun Project.resolveClasspathCoordinates(configName: String): Map<String, String>
             val owner = artifact.variant.owner
             if (owner is org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
               result[path] = "${owner.group}:${owner.module}:${owner.version}"
+            } else if (owner is org.gradle.api.artifacts.component.ProjectComponentIdentifier) {
+              result[path] = owner.projectName
             }
           }
         }
@@ -614,6 +625,8 @@ fun Project.detectModel(): Map<String, Any?> {
   val kmpSourceSets = extractKmpSourceSets()
 
   // Collect explicit project dependencies (project(":core"), etc.) from all configurations.
+  // Also detects composite build dependencies (includeBuild with dependencySubstitution)
+  // by scanning resolved artifacts for ProjectComponentIdentifier owners.
   // These are used by klspw to promote library deps to module deps without name guessing.
   val projectDeps = mutableSetOf<String>()
   for (config in configurations) {
@@ -624,6 +637,32 @@ fun Project.detectModel(): Map<String, Any?> {
         projectDeps.add(dep.name)
       }
     }
+    // Composite build deps: dependency substitution replaces external module deps with
+    // included build project deps. These don't appear as ProjectDependency in the
+    // dependency list, but the resolved artifacts have ProjectComponentIdentifier owners.
+    runCatching {
+        config.incoming
+          .artifactView { lenient(true) }
+          .artifacts
+          .artifacts
+          .forEach { artifact ->
+            val owner = artifact.variant.owner
+            if (owner is org.gradle.api.artifacts.component.ProjectComponentIdentifier) {
+              // Only include projects from included builds (composite), not from the current build.
+              // Current build projects are already captured via ProjectDependency above.
+              // Root build has buildPath ":", included builds have paths like
+              // ":included-build-name".
+              if (owner.build.buildPath != ":") {
+                projectDeps.add(owner.projectName)
+              }
+            }
+          }
+      }
+      .getOrElse { e ->
+        logger.debug(
+          "klspw: failed to scan artifacts for composite deps in ${config.name}: ${e.message}"
+        )
+      }
   }
 
   // Collect this project's own output jar stems (e.g., "core-jvm", "core-metadata").
