@@ -45,7 +45,8 @@ TEST_CASE("normalizes paths relative to config dir") {
   const auto cfg = klspw::Config::load_yaml_file("test/fixtures/example_config.yaml");
   const auto config_dir = fs::absolute("test/fixtures").lexically_normal();
 
-  CHECK(cfg.workspace_file() == config_dir / "workspace.json");
+  REQUIRE(cfg.workspace_file().has_value());
+  CHECK(*cfg.workspace_file() == config_dir / "workspace.json");
   CHECK(cfg.root_path(cfg.data().roots[0]) == config_dir / "src/proj_1");
 }
 

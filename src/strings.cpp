@@ -2,6 +2,18 @@
 
 namespace klspw {
 
+string escape_json(string_view sv) {
+  string result;
+  result.reserve(sv.size());
+  for (const auto c : sv) {
+    if (c == '\\' || c == '"') {
+      result += '\\';
+    }
+    result += c;
+  }
+  return result;
+}
+
 opt_string extract_between(string_view input, Delimiters delimiters) {
   delimiters.validate();
   const auto begin_pos = input.find(delimiters.open);

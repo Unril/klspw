@@ -202,3 +202,44 @@ TEST_CASE("find_dir ignores files with matching name") {
 
   CHECK_FALSE(klspw::find_dir(dir.path, "target-dir").has_value());
 }
+
+// --- write_binary_file ---
+
+TEST_CASE("write_binary_file writes and round-trips binary data") {
+  const TempDir dir;
+  const auto p = dir.path / "test.bin";
+  const std::array<std::uint8_t, 6> data = {0x00, 0x01, 0xFE, 0xFF, 0x42, 0x00};
+
+  klspw::write_binary_file(p, data);
+
+  const auto content = klspw::read_file(p);
+  REQUIRE(content.size() == data.size());
+  CHECK(std::memcmp(content.data(), data.data(), data.size()) == 0);
+}
+
+TEST_CASE("write_binary_file creates file in new directory") {
+  const TempDir dir;
+  const auto p = dir.path / "sub" / "deep" / "test.bin";
+  fs::create_directories(p.parent_path());
+  const std::array<std::uint8_t, 2> data = {0xCA, 0xFE};
+
+  klspw::write_binary_file(p, data);
+
+  CHECK(fs::is_regular_file(p));
+  CHECK(fs::file_size(p) == 2);
+}
+
+TEST_CASE("write_binary_file handles empty data") {
+  const TempDir dir;
+  const auto p = dir.path / "empty.bin";
+
+  klspw::write_binary_file(p, {});
+
+  CHECK(fs::is_regular_file(p));
+  CHECK(fs::file_size(p) == 0);
+}
+
+TEST_CASE("write_binary_file throws on empty path") {
+  const std::array<std::uint8_t, 1> data = {0x42};
+  CHECK_THROWS_WITH_AS(klspw::write_binary_file("", data), doctest::Contains("empty path"), std::runtime_error);
+}

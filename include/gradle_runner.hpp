@@ -28,20 +28,17 @@ class GradleRunner {
 
   /// Explicit temp directory (for testing).
   explicit GradleRunner(const path& temp_dir) : init_script_path_{write_init_script(temp_dir)} {
-    d_debug("GradleRunner: init script at {}", init_script_path_.string());
+    d_debug("GradleRunner: init script at {}", init_script_path_->string());
   }
 
   ~GradleRunner() noexcept { close(); }
 
-  GradleRunner(GradleRunner&& other) noexcept : init_script_path_{std::move(other.init_script_path_)} {
-    other.init_script_path_.clear();
-  }
+  GradleRunner(GradleRunner&& other) noexcept : init_script_path_{std::exchange(other.init_script_path_, nullopt)} {}
 
   GradleRunner& operator=(GradleRunner&& other) noexcept {
     if (this != &other) {
       close();
-      init_script_path_ = std::move(other.init_script_path_);
-      other.init_script_path_.clear();
+      init_script_path_ = std::exchange(other.init_script_path_, nullopt);
     }
     return *this;
   }
@@ -52,11 +49,11 @@ class GradleRunner {
   /// Remove the init script from disk.
   /// Safe to call multiple times -- subsequent calls are no-ops.
   void close() noexcept {
-    if (init_script_path_.empty()) {
+    if (!init_script_path_) {
       return;
     }
-    const auto path_copy = init_script_path_;
-    init_script_path_.clear();
+    const auto path_copy = *init_script_path_;
+    init_script_path_ = nullopt;
     std::error_code ec;
     fs::remove(path_copy, ec);
     if (ec) {
@@ -66,16 +63,16 @@ class GradleRunner {
 
   /// Run Gradle against a root directory with the given build config. Returns captured stdout.
   string operator()(const BuildConfig& build, const path& root) const {
-    return ProcessRunner(build.args_for(init_script_path_), root).run();
+    require(init_script_path_.has_value(), "GradleRunner: init script not available (already closed?)");
+    return ProcessRunner(build.args_for(*init_script_path_), root).run();
   }
 
-  const path& init_script_path() const { return init_script_path_; }
+  const opt_path& init_script_path() const { return init_script_path_; }
 
  private:
-  path init_script_path_;
+  opt_path init_script_path_;
 
   static path write_init_script(const path& dir) {
-    fs::create_directories(dir);
     const auto tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
     const auto path = dir / format("init.{}.gradle.kts", tid);
     write_file(path, init_script_content);

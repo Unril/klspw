@@ -46,13 +46,13 @@ All managed via vcpkg manifest mode.
 
 ```text
 include/
-  common.hpp            # type aliases, namespace imports, glaze opts, require()
-  strings.hpp           # string utilities: trim, join, split_words, strip_prefixes, extract_between
-  files.hpp             # file I/O: read_file, write_file, find_dir, find_file, file_stem
-  ranges.hpp            # range adaptors: to_vector, unique_by, not_in
+  common.hpp            # type aliases, namespace imports, glaze opts, require(), projections, compose()
+  strings.hpp           # string utilities: trim, split_words, strip_prefixes, escape_json, extract_between, MavenCoords, join_to_string
+  files.hpp             # file I/O: read_file, write_file, write_binary_file, find_dir, find_file, file_stem
+  ranges.hpp            # range adaptors: to_vector, to_set, unique_by, not_in, concat_to_vector, find_map, find_opt
   describe.hpp          # d_info/d_debug/d_trace logging + Describable concept
   validate.hpp          # ValidateContext for collecting validation errors
-  config.hpp            # config model + YAML loading via glaze
+  config.hpp            # config model + ConfigDir + YAML loading via glaze
   gradle_runner.hpp     # GradleRunner: init script lifecycle
   gradle.hpp            # Gradle model types + parser + workspace conversion
   workspace.hpp         # kotlin-lsp workspace.json schema types
@@ -62,7 +62,7 @@ include/
   sources.hpp           # JarPath: jar classification, Maven coordinates, source discovery
 src/
   main.cpp              # CLI entry point (CLI11)
-  strings.cpp           # extract_between implementation
+  strings.cpp           # extract_between, escape_json implementations
   files.cpp             # file I/O and filesystem search implementations
 test/
   test_common.hpp       # shared RAII test fixtures (TempDir, TempConfig, TempFile)
@@ -113,7 +113,9 @@ GitHub Actions workflows automate building, testing, security scanning, and rele
 
 `fuzzing.yml` runs [ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) on pull requests, fuzzing the YAML config parser and Gradle output parser with AddressSanitizer for 5 minutes per run.
 
-Homebrew bottles (prebuilt binaries) are built separately by the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo's own CI workflows using `brew test-bot`.
+`update-tap.yml` triggers when a GitHub Release is published (or manually via `workflow_dispatch`). It computes the source tarball sha256, checks out the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo, updates the formula URL and sha256 (stripping any stale bottle block), verifies the formula syntax, and opens a PR against the tap. The PR is labeled `pr-pull` by the tap's CI to trigger bottle builds and publishing.
+
+Homebrew bottles (prebuilt binaries) are built by the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo's own CI workflows using `brew test-bot`.
 
 ## Publishing a release
 
@@ -125,14 +127,8 @@ Homebrew bottles (prebuilt binaries) are built separately by the [homebrew-tap](
    git push origin v0.2.0
    ```
 
-3. The release workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release with the archives attached.
-4. Get the source tarball sha256 for Homebrew:
-
-   ```bash
-   curl -sL https://github.com/Unril/klspw/archive/refs/tags/v0.2.0.tar.gz | shasum -a 256
-   ```
-
-5. In the [homebrew-tap](https://github.com/Unril/homebrew-tap) repo, update `Formula/klspw.rb` with the new `url`, `sha256`, and version. Open a PR, let the tap CI build bottles, then label the PR `pr-pull` to publish them.
+3. The `release.yml` workflow builds all three platforms, runs tests, packages `.tar.gz` archives, attests them, and creates a GitHub Release.
+4. The `update-tap.yml` workflow automatically opens a PR against the [homebrew-tap](https://github.com/Unril/homebrew-tap) with the updated formula. Label the PR `pr-pull` to trigger bottle builds and publishing.
 
 Users can verify the provenance of downloaded release binaries:
 
