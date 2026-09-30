@@ -1,4 +1,4 @@
-FROM gcr.io/oss-fuzz-base/base-builder:v1@sha256:0887251236710be82abb389caf84b27da1b0ef0076920421c626cd6bb6c8239b
+FROM gcr.io/oss-fuzz-base/base-builder:v1@sha256:1b2aa9af97857e4e58afb265210f0cb92f524eae7363a9db1f66040b8847488b
 
 # Install vcpkg dependencies and build tools.
 RUN apt-get update && apt-get install -y --no-install-recommends \
